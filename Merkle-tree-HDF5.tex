@@ -11,7 +11,9 @@
 \usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc}
 \usepackage{listings}
 \usepackage{fancyhdr}
+\usepackage[hyphens]{url}
 \usepackage{filecontents}
+\setlength{\emergencystretch}{3em}
 
 \begin{filecontents}{references.bib}
 @article{tang2022async,
@@ -551,7 +553,7 @@ SHINES taxonomy~\cite{shines}:
 
 \begin{description}[nosep]
   \item[T1: Storage-level tampering (TCD).]
-    An adversary with read/write access to the storage medium (e.g., a
+    An adversary with read\slash write access to the storage medium (e.g., a
     compromised storage node, a malicious administrator, or a man-in-the-middle
     during file transfer) modifies chunk data, metadata, or both. The adversary
     may attempt \emph{targeted modification} (altering specific chunks while
@@ -641,7 +643,7 @@ scientific data use case requires integrity \emph{without} encryption:
 
 \noindent In summary, the Merkle tree is the \emph{primary} contribution of
 this proposal and is valuable even---especially---when encryption is not used.
-The encryption filters (AES-256-CTR, ChaCha20-Poly1305) are complementary
+The encryption filters (AES-256-CTR,\linebreak[1] ChaCha20-Poly1305) are complementary
 components for datasets that \emph{do} require confidentiality; the EtM
 pipeline ordering ensures the Merkle tree's integrity properties are preserved
 in that case.
