@@ -260,6 +260,50 @@
   howpublished = {RFC 3161},
   year      = {2001}
 }
+@misc{fips204,
+  author    = {{NIST}},
+  title     = {{FIPS} 204: Module-Lattice-Based Digital Signature Standard ({ML-DSA})},
+  howpublished = {Federal Information Processing Standards Publication 204},
+  year      = {2024}
+}
+@misc{fips205,
+  author    = {{NIST}},
+  title     = {{FIPS} 205: Stateless Hash-Based Digital Signature Standard ({SLH-DSA})},
+  howpublished = {Federal Information Processing Standards Publication 205},
+  year      = {2024}
+}
+@misc{k12,
+  author    = {Bertoni, Guido and Daemen, Joan and Hoffert, Seth and Peeters, Micha\"{e}l and Van Assche, Gilles and Van Keer, Ronny},
+  title     = {{KangarooTwelve}: Fast Hashing Based on {Keccak-p}},
+  howpublished = {\url{https://keccak.team/kangarootwelve.html}},
+  year      = {2018}
+}
+@inproceedings{meier2013tamarin,
+  author    = {Meier, Simon and Schmidt, Benedikt and Cremers, Cas and Basin, David},
+  title     = {The {TAMARIN} Prover for the Symbolic Analysis of Security Protocols},
+  booktitle = {25th International Conference on Computer Aided Verification (CAV)},
+  pages     = {696--701},
+  year      = {2013}
+}
+@inproceedings{bellare2000encrypt,
+  author    = {Bellare, Mihir and Namprempre, Chanathip},
+  title     = {Authenticated Encryption: Relations Among Notions and Analysis of the Generic Composition Paradigm},
+  booktitle = {Advances in Cryptology --- ASIACRYPT 2000},
+  pages     = {531--545},
+  year      = {2000}
+}
+@misc{h5coro,
+  author    = {{NASA SlideRule Project}},
+  title     = {{h5coro}: A Cloud-Optimized {HDF5} Reader for Scientific Data},
+  howpublished = {\url{https://github.com/SlideRuleEarth/h5coro}},
+  year      = {2024}
+}
+@misc{hsds,
+  author    = {{The HDF Group}},
+  title     = {{HSDS}: Highly Scalable Data Service for {HDF5} in the Cloud},
+  howpublished = {\url{https://github.com/HDFGroup/hsds}},
+  year      = {2024}
+}
 \end{filecontents}
 
 \lstset{
@@ -307,12 +351,18 @@ RustyHDF5---that supports incremental integrity verification, partial chunk
 verification, and tamper localization for HDF5 datasets at scale, informed by
 the HDF5 SHINES (Securing HDF5 for Industry, National Security, Engineering,
 and Science) security taxonomy developed under the NSF Safe-OSE
-program~\cite{shines}. The design employs a hybrid storage layout (root-hash
-attribute plus chunked companion dataset), an Encrypt-then-MAC filter pipeline
-ordering, version-counter nonce derivation for safe in-place updates, and
-Ed25519 signing with rollback resistance. Together, these mechanisms form a
-concrete prototype of chunk-level data integrity and authentication for the
-S2-D2 framework. The RustyHDF5 pure-Rust HDF5
+program~\cite{shines}. Beyond the systems architecture (hybrid root-attribute
+plus chunked companion dataset, Encrypt-then-MAC filter pipeline ordering,
+version-counter nonce derivation for safe in-place updates), the work targets
+three research contributions intended to be evaluated in the resulting
+publication: (i)~a \emph{verifiable subset extraction} protocol enabling a
+recipient of an arbitrary hyperslab to cryptographically verify it as a true
+subset of a signed parent dataset; (ii)~a \emph{post-quantum hybrid signing}
+scheme (Ed25519~$+$~ML-DSA-65) measured at HDF5 scale, addressing the 50-year
+archival timescales typical of scientific data; and (iii)~a \emph{symbolic
+security analysis} (Tamarin or game-based) of the EtM~$+$~version-counter~$+$
+signed-root construction, evaluated against a directed-adversary red-team study
+on real scientific datasets. The RustyHDF5 pure-Rust HDF5
 implementation~\cite{rustyhdf5} serves as the experimental platform, enabling
 rapid prototyping before design decisions are committed to the C~HDF5 library.
 \end{abstract}
@@ -523,6 +573,13 @@ SHINES taxonomy~\cite{shines}:
     perfectly, but the researcher operates on stale data (e.g., a simulation
     checkpoint rolled back to a pre-correction state). This threat requires
     temporal ordering beyond what a static Merkle root provides.
+  \item[T5: Harvest-now, forge-later (post-quantum).]
+    An adversary archives signed roots and public keys today and, once a
+    cryptographically relevant quantum computer (CRQC) exists, recovers the
+    Ed25519 (or other elliptic-curve) private key via Shor's algorithm and
+    forges signatures over tampered data attributed to the original signer.
+    Because scientific datasets are routinely retained for 30--100~years, this
+    threat is concrete for any archive signed with classical-only signatures.
 \end{description}
 
 \noindent Each proposed mechanism maps to these threats as follows. The Merkle
@@ -539,7 +596,9 @@ and Sigstore transparency log publication (if enabled) provides an independent,
 tamper-evident temporal record. Importantly, the companion dataset storing the
 full Merkle tree must itself be protected---we address this via an integrity
 hash of the serialized companion included in the signed root attribute
-(\S\ref{sec:merkle-storage}).
+(\S\ref{sec:merkle-storage}). To defend against T5, the signed root carries a
+\emph{hybrid} signature combining Ed25519 with a post-quantum scheme
+(ML-DSA-65 or SLH-DSA-128s); see \S\ref{sec:pq-hybrid}.
 
 \subsection{Why Integrity Verification Independent of Encryption?}
 \label{sec:why-integrity}
@@ -773,7 +832,8 @@ reading any other chunk data.}
 
 \subsection{Hash Algorithm Selection}
 
-We propose evaluating two hash functions:
+We propose evaluating three hash functions to span the
+performance--compliance--standards space:
 
 \begin{itemize}[nosep]
   \item \textbf{SHA-256}: Widely used, FIPS-approved, hardware-accelerated via
@@ -784,11 +844,77 @@ We propose evaluating two hash functions:
     $\sim$4$\times$ higher throughput than SHA-256 on modern CPUs without
     hardware acceleration. BLAKE3's built-in tree hashing mode could eliminate
     the need for an external Merkle structure for the per-dataset case.
+  \item \textbf{KangarooTwelve}~\cite{k12}: A SHA-3-family parallel hash
+    derived from \texttt{Keccak-p}, included to give FIPS-required deployments
+    a parallel option without the SHA-256 throughput ceiling. Its 12-round
+    permutation provides a generous security margin while exploiting SIMD and
+    multi-core parallelism on long inputs.
 \end{itemize}
 
-\noindent The research will benchmark both on representative scientific data to
-determine the performance--compliance tradeoff (SHA-256 for FIPS environments,
-BLAKE3 for maximum throughput).
+\noindent The research will benchmark all three on representative scientific
+data to determine the performance--compliance tradeoff (SHA-256 for legacy
+FIPS environments, KangarooTwelve for FIPS-aligned parallel deployments,
+BLAKE3 for maximum throughput where compliance is unconstrained).
+
+\subsection{Verifiable Subset Extraction}
+\label{sec:subset}
+
+A central use case for FAIR scientific data sharing is partial data delivery:
+a recipient requests a hyperslab (e.g., a spatial region or temporal window) of
+a published dataset, and must be able to verify cryptographically that the
+delivered bytes are a true, unmodified subset of the signed parent dataset. A
+flat per-dataset hash cannot answer this question without delivering the
+entire dataset; per-chunk AEAD authentication can verify that each delivered
+chunk is intact \emph{individually}, but cannot prove that the delivered set
+constitutes the requested hyperslab and that no requested chunks were silently
+omitted, substituted from a different version, or reordered.
+
+This proposal elevates \emph{verifiable subset extraction} to a
+first-class research contribution. We define:
+
+\begin{description}[nosep]
+  \item[\texttt{extract\_subset(D, H)} $\rightarrow (\mathcal{C}, \pi)$:] given
+    a signed dataset~$D$ and a hyperslab~$H$, produce the chunk set
+    $\mathcal{C}$ covering~$H$ and a \emph{subset proof}~$\pi$.
+  \item[\texttt{verify\_subset($\mathcal{C}, H, \pi$, root)} $\rightarrow \{\bot, \top\}$:]
+    accept iff (i)~every chunk in~$\mathcal{C}$ is authenticated by the signed
+    root via its Merkle path, (ii)~$\mathcal{C}$ exactly covers the hyperslab
+    request~$H$ given the dataset's chunk grid, and (iii)~no chunk in
+    $\mathcal{C}$ has been substituted from a different dataset version
+    (enforced via the per-chunk version counter, \S\ref{sec:nonce}).
+\end{description}
+
+The proof~$\pi$ has three components: (a)~the union of Merkle witnesses for
+the chunks in~$\mathcal{C}$, with shared internal nodes deduplicated;
+(b)~a \emph{coverage certificate} binding the dataset's chunk-grid parameters
+(stored in the dataset's object header and covered by the file-level root) to
+the requested hyperslab~$H$, so the verifier can recompute which chunks
+\emph{should} have been delivered; and (c)~the per-chunk version counters,
+which are bound into each leaf hash and therefore covered by the witnesses.
+
+\paragraph{Soundness sketch.}
+Define an adversary that wins if it produces $(\mathcal{C}', \pi')$ accepted
+by \texttt{verify\_subset} where $\mathcal{C}' \neq \mathcal{C}_H$ (the true
+covering set for~$H$). Component~(a) reduces $\mathcal{C}'$ membership soundness
+to second-preimage resistance of the underlying hash. Component~(b) reduces
+coverage soundness to the integrity of the chunk-grid parameters in the object
+header (covered by the file-level root, \S\ref{sec:merkle-storage}).
+Component~(c) reduces version-substitution resistance to the binding of $v_k$
+into the leaf hash (\S\ref{sec:nonce}). A complete proof---including the
+treatment of non-rectangular hyperslabs, partial-chunk requests, and the
+interaction with HDF5's filter pipeline---is part of the planned work
+(\S\ref{sec:security-analysis}).
+
+\paragraph{Open research questions.}
+The proof size~$|\pi|$ grows with both the hyperslab shape and the dataset's
+chunk grid. For an $r$-dimensional dataset with $n_i$ chunks per dimension and
+a hyperslab touching $m_i$ chunks per dimension, naive witness aggregation
+gives $|\pi| = O\bigl(\prod_i m_i \cdot \log \prod_i n_i\bigr)$. For
+strided or sparse hyperslabs typical of scientific access (e.g., every 10th
+time step), this can be substantially compressed by exploiting shared
+internal nodes; the optimal layout for the companion dataset that minimizes
+expected proof size for realistic access patterns is an open question we
+intend to investigate empirically (RQ6, \S\ref{sec:research-questions}).
 
 \subsection{Storage of the Merkle Tree}
 \label{sec:merkle-storage}
@@ -1013,6 +1139,7 @@ of the random number generator. The implementation will support both schemes,
 with the version-counter approach as the default.
 
 \subsection{Signing Authority and Key Management}
+\label{sec:signing}
 
 A Merkle tree without a signed root is vulnerable to wholesale replacement (an
 attacker replaces both data and tree; see threat~T1 in~\S\ref{sec:threat}). The
@@ -1030,6 +1157,50 @@ core signing mechanism is:
     self-contained verification, or (b)~distributed via a keychain, connecting
     to Task~2's plugin keychain work.
 \end{itemize}
+
+\paragraph{Post-quantum hybrid signing (T5: harvest-now, decrypt-later).}
+\label{sec:pq-hybrid}
+Scientific data is routinely retained for decades---NOAA climate baselines,
+EQSIM simulation outputs, genomic reference assemblies, and astronomical
+survey data are all held on archival timescales of 30--100~years. Within that
+horizon, a cryptographically relevant quantum computer (CRQC) is widely
+expected to render Ed25519 (and all elliptic-curve and RSA signatures)
+forgeable via Shor's algorithm. An adversary who archives today's signatures
+and waits---the \emph{harvest-now, forge-later} threat (T5)---can later
+fabricate signed roots over tampered datasets attributed to the original
+signer. This proposal therefore promotes \textbf{post-quantum hybrid signing}
+to a first-class research deliverable. The signed root attribute carries a
+hybrid signature consisting of:
+
+\begin{equation}
+  \sigma_\text{root} = \bigl(\sigma_\text{Ed25519}(R), \;
+                            \sigma_\text{ML-DSA-65}(R)\bigr),
+  \quad R = \text{root} \,\|\, \text{companion\_hash} \,\|\, v_\text{dataset} \,\|\, \tau
+\end{equation}
+
+\noindent where $R$ is the canonical signed payload (root, companion integrity
+hash, dataset-level version counter, and timestamp). ML-DSA-65 (NIST FIPS
+204~\cite{fips204}) provides $\sim$192-bit classical and $\sim$128-bit
+post-quantum security; SLH-DSA-128s (NIST FIPS 205~\cite{fips205}) is also
+implemented as an alternative for deployments preferring hash-based
+signatures whose security rests only on the underlying hash function. A
+verifier accepts the signature iff \emph{both} components verify, providing
+graceful degradation: until a CRQC exists, Ed25519 dominates verification
+time; once one exists, the ML-DSA-65 component preserves authenticity.
+
+\paragraph{Why this needs to be measured at HDF5 scale.}
+ML-DSA-65 signatures are $\sim$3.3~KB and public keys are $\sim$2~KB, versus
+64~B and 32~B for Ed25519. SLH-DSA signatures are larger still ($\sim$8~KB
+to $\sim$30~KB depending on parameters). At the dataset level this is
+negligible, but a \emph{file-level} signed root that aggregates roots from
+$10^4$--$10^5$ datasets in a single HDF5 file (typical of HPC checkpoint
+files) interacts with HDF5's object-header encoding rules in ways that have
+not been measured. Likewise, batch verification throughput at $10^6$--$10^9$
+chunks under per-dataset verification is unknown for any PQ scheme on HDF5
+workloads. Producing this measurement is RQ7
+(\S\ref{sec:research-questions}) and is intended to be a primary empirical
+contribution of the resulting paper, supplying the first published
+PQ-signature performance numbers for scientific data archives.
 
 \paragraph{Symmetric key management.}
 The asymmetric Ed25519 key provides signing (authenticity), but the encryption
@@ -1085,7 +1256,42 @@ independent of the signer's institutional identity. Sigstore integration
 involves external service dependencies and is therefore scoped as a stretch goal
 for Phase~2 (\S\ref{sec:impl}).
 
+\subsection{Security Analysis Methodology}
+\label{sec:security-analysis}
+
+A central weakness of prior provenance-style systems papers is that the
+security claim is asserted by intuition rather than argued formally,
+inviting reviewer rejection at security venues and leaving operational
+deployments without a defensible model. We therefore commit to producing
+either a symbolic protocol model or a game-based argument as part of this
+research:
+
+\begin{description}[nosep]
+  \item[Game-based argument (baseline, in scope).]
+    A written argument in the paper showing that the construction
+    \mbox{(EtM~filter pipeline)~$+$~(version-counter nonce)~$+$~(hybrid
+    signed root over companion-integrity hash)} achieves INT-CTXT against
+    the adversary defined in \S\ref{sec:threat}, by reduction to
+    (a)~the second-preimage resistance of the underlying hash function,
+    (b)~the EUF-CMA security of the hybrid signature scheme, and
+    (c)~the IND-CPA security of the chosen AEAD cipher. We follow the
+    Bellare--Namprempre framework for analyzing generic
+    composition~\cite{bellare2000encrypt}.
+  \item[Symbolic model (stretch, preferred for security venues).]
+    A Tamarin Prover~\cite{meier2013tamarin} model of the file-creation,
+    update, and verification protocols, including the version-counter
+    binding into leaf hashes and the hybrid-signature root, with
+    machine-checked verification of the principal security lemmas
+    (authenticity, freshness, subset soundness). The Tamarin model would
+    be released alongside the implementation.
+\end{description}
+
+\noindent The game-based argument is treated as a Phase~2 deliverable; the
+Tamarin model is a stretch deliverable whose completion would target a
+security venue (USENIX Security, ACSAC) for the resulting paper.
+
 \subsection{Research Questions}
+\label{sec:research-questions}
 
 \begin{enumerate}[label=\textbf{RQ\arabic*}]
   \item What is the storage overhead of Merkle trees as a function of chunk
@@ -1098,16 +1304,33 @@ for Phase~2 (\S\ref{sec:impl}).
   \item How does incremental tree extension perform for append-heavy workloads
     (time-series, streaming sensor data) compared to re-signing the entire
     dataset?
-  \item What is the throughput advantage of BLAKE3 over SHA-256 for Merkle tree
-    construction at HDF5-typical chunk sizes, and does BLAKE3's internal tree
-    hashing mode offer additional speedup for whole-dataset root computation?
-    (Note: BLAKE3's internal tree uses fixed 1\,KB leaf chunks and does not
-    expose intermediate nodes via its public API, so it cannot replace the
-    external Merkle structure for partial verification. This question is
-    therefore scoped to throughput comparison, not structural subsumption.)
+  \item What is the throughput advantage of BLAKE3 and KangarooTwelve over
+    SHA-256 for Merkle tree construction at HDF5-typical chunk sizes, and does
+    BLAKE3's internal tree hashing mode offer additional speedup for
+    whole-dataset root computation? (Note: BLAKE3's internal tree uses fixed
+    1\,KB leaf chunks and does not expose intermediate nodes via its public
+    API, so it cannot replace the external Merkle structure for partial
+    verification. This question is therefore scoped to throughput comparison,
+    not structural subsumption.)
   \item Can the Merkle tree detect and localize tampering injected into
     specific chunks of real-world scientific datasets (NOAA climate, EQSIM
     simulation~\cite{mccallen2021eqsim})?
+  \item \textbf{(Subset extraction.)}~What is the achievable proof
+    size~$|\pi|$ for verifiable hyperslab subset extraction
+    (\S\ref{sec:subset}) as a function of hyperslab shape (rectangular,
+    strided, sparse), dataset chunk grid, and companion-dataset layout, and
+    what is the proof-construction and proof-verification latency relative
+    to the bandwidth saved over a na\"{\i}ve full-dataset re-download?
+  \item \textbf{(Post-quantum signing.)}~What are the storage, sign, and
+    verify costs of hybrid Ed25519~$+$~ML-DSA-65 (and Ed25519~$+$~SLH-DSA-128s)
+    signed roots at $10^4$--$10^5$ datasets per file and $10^6$--$10^9$
+    chunks per dataset, including object-header impact and end-to-end
+    verification time on x86-64 (with and without AVX-512) and ARM?
+  \item \textbf{(Adversarial soundness.)}~Can a directed adversary with
+    knowledge of the design and full read/write access to the storage
+    medium evade detection by the verification protocol within the stated
+    threat model (T1--T5)? This is evaluated via the red-team study
+    described in~\S\ref{sec:adversarial}.
 \end{enumerate}
 
 
@@ -1144,33 +1367,116 @@ proposal:
 
 Beyond comparing Merkle-tree partial verification ($O(\log N)$) against
 full-dataset rehashing ($O(N)$)---which is expected to favor the Merkle tree by
-construction---we include a comparison against \textbf{filesystem-level
-checksumming} (ZFS~\cite{bonwick2003zfs} or Btrfs block-level integrity). This
-baseline addresses the anticipated reviewer question: \emph{``Why do this in
-HDF5 when my ZFS filesystem already prevents silent data corruption?''} The
-answer is that filesystem checksums are stripped the moment a file is
-transferred over a network, uploaded to cloud storage, or moved to a different
-filesystem. Application-level (HDF5) Merkle trees \emph{travel with the data}
-and can be verified by any recipient regardless of the underlying storage. The
-experiments will quantify the overhead of application-level Merkle verification
-relative to ZFS checksumming for the same datasets, demonstrating that the
-portability benefit comes at acceptable cost.
+construction---we include three additional baselines targeted at the questions
+reviewers most often raise:
+
+\begin{description}[nosep]
+  \item[Filesystem-level checksumming
+    (ZFS~\cite{bonwick2003zfs}, Btrfs).] Addresses
+    \emph{``Why do this in HDF5 when my filesystem already prevents silent
+    data corruption?''} The answer is that filesystem checksums are stripped
+    the moment a file is transferred over a network, uploaded to cloud
+    storage, or moved to a different filesystem. Application-level (HDF5)
+    Merkle trees \emph{travel with the data} and can be verified by any
+    recipient regardless of the underlying storage.
+  \item[Cloud object-store checksums (S3 ETag, GCS CRC32C).] Addresses
+    \emph{``S3 already gives me per-object integrity.''} Object stores
+    expose a flat per-object hash and lack hierarchical structure for
+    partial verification, sub-object tamper localization, or
+    non-repudiable signing. The cloud baseline (\S\ref{sec:cloud-eval})
+    quantifies this gap by comparing proof-of-chunk retrieval over S3
+    range-GETs against full-object re-download.
+  \item[Per-chunk AEAD only (no Merkle tree).] Addresses
+    \emph{``Why not just AEAD every chunk and be done?''} This baseline
+    verifies that AEAD alone cannot answer ``has \emph{any} chunk been
+    modified?'' without decrypting all chunks, and cannot localize
+    tampering without an external authenticated structure.
+\end{description}
+
+\subsection{Cloud Object-Store Evaluation}
+\label{sec:cloud-eval}
+
+A growing fraction of scientific HDF5 deployments runs over cloud object
+stores: HSDS~\cite{hsds}, h5coro~\cite{h5coro}, and the ros3 VFD all access
+HDF5 over S3-compatible APIs. The companion-dataset design maps naturally to
+this environment: $O(\log N)$ proof-path nodes can be retrieved via
+HTTP range-GETs against the companion's chunked layout, without downloading
+the data chunks themselves. We evaluate this end-to-end for two cloud
+scenarios---intra-region (LAN-class latency) and cross-region (WAN, $\sim$80~ms
+RTT)---measuring (a)~bytes transferred for verifying a hyperslab via subset
+proof versus full re-download, (b)~wall-clock latency of the proof-then-verify
+path, and (c)~the impact of HTTP/2 multiplexing on proof-path retrieval
+latency. This is the first reported measurement of authenticated partial
+verification for HDF5 over cloud storage, and directly grounds the
+``portability'' benefit of application-level Merkle trees in concrete numbers.
+
+\subsection{Adversarial Red-Team Study}
+\label{sec:adversarial}
+
+A common failure mode of integrity-system papers is that the ``tamper
+detection'' experiment injects modifications using the system's own
+write path and then reports near-100\% true-positive / 0\% false-positive
+rates. This trivially confirms that the verifier rejects what the writer
+breaks; it does not test whether a directed adversary can evade detection.
+We instead conduct a \emph{white-box red-team study} in which the adversary
+has full design knowledge, full read/write access to the storage medium, and
+attempts to mount each threat in \S\ref{sec:threat}:
+
+\begin{description}[nosep]
+  \item[T1a (storage-level tampering, data).] Targeted single- and
+    multi-chunk modification, including modifications of compressed
+    payloads designed to remain valid after the filter pipeline.
+  \item[T1b (storage-level tampering, internal tree nodes).] Modification of
+    internal nodes in the companion dataset without altering the root,
+    targeting the companion-integrity-hash defense
+    (\S\ref{sec:merkle-storage}).
+  \item[T2 (silent data corruption).] Single-bit and burst-error injection
+    via deliberate fault injection on a known-good chunk.
+  \item[T3 (provenance forgery).] Substitution of the
+    \texttt{\_provenance\_pubkey} attribute alone, and key-confusion attacks
+    on the hybrid signature.
+  \item[T4 (rollback).] Substitution of an entire valid prior version of the
+    file (data, companion, root attribute), and selective per-chunk rollback
+    where the chunk and its version counter are both restored to a prior
+    valid state. The latter targets the version-counter binding into the
+    leaf hash (\S\ref{sec:nonce}).
+  \item[T5 (post-quantum).] Simulated forgery of the Ed25519 component of
+    the hybrid signature (assuming oracle access to a CRQC), to confirm that
+    the ML-DSA-65 component blocks acceptance.
+  \item[Subset-extraction attacks.] (a)~Omission of a chunk from the delivered
+    set; (b)~substitution of a chunk from a different version; (c)~delivery
+    of a covering set that does not match the requested hyperslab.
+\end{description}
+
+For each attack class we report whether the verifier rejects, the
+proof-of-failure granularity (which chunk(s) were flagged), and the wall-clock
+detection latency. Attacks that succeed are root-cause-analyzed and the
+design is iterated; this is treated as a research result, not a defect.
 
 \subsection{Metrics}
 
 \begin{itemize}[nosep]
-  \item \textbf{Throughput}: MB/s for hash computation (SHA-256, BLAKE3) and
-    encryption (AES-256-CTR, ChaCha20-Poly1305) at varying chunk sizes.
+  \item \textbf{Throughput}: MB/s for hash computation
+    (SHA-256, BLAKE3, KangarooTwelve) and encryption (ChaCha20-Poly1305)
+    at varying chunk sizes.
   \item \textbf{Partial verification latency}: Wall-clock time to verify a
     single chunk via Merkle proof vs.\ full-dataset rehash.
+  \item \textbf{Subset-proof size and latency}: $|\pi|$ and end-to-end
+    \texttt{extract}/\texttt{verify} time as a function of hyperslab shape.
+  \item \textbf{WAN bandwidth savings}: Bytes transferred for proof-of-subset
+    over S3 range-GETs vs.\ full re-download.
+  \item \textbf{Hybrid-signature cost}: Sign and verify time, signature size,
+    public-key size, and object-header impact for Ed25519 alone vs.\
+    Ed25519~$+$~ML-DSA-65 vs.\ Ed25519~$+$~SLH-DSA-128s.
   \item \textbf{Incremental update cost}: Time to append $k$ chunks or
     overwrite $k$ existing chunks and update the Merkle tree vs.\ re-signing
     the entire dataset.
   \item \textbf{Storage overhead}: Bytes consumed by Merkle tree, companion
     dataset, version counters, and provenance metadata as a fraction of
     dataset size.
-  \item \textbf{Tamper detection accuracy}: True positive / false positive
-    rates for injected modifications at chunk, dataset, and file levels.
+  \item \textbf{Adversarial-evasion rate}: Number of red-team attack classes
+    detected vs.\ undetected (\S\ref{sec:adversarial}); for undetected
+    attacks, the time-to-fix in the design.
 \end{itemize}
 
 \subsection{Statistical Protocol}
@@ -1188,7 +1494,15 @@ trials for I/O-sensitive measurements.
 \section{Implementation Plan}
 \label{sec:impl}
 
-\subsection{Phase 1: Merkle-Tree Provenance in RustyHDF5 (Months 1--4)}
+The implementation plan is structured around the three primary research
+contributions identified in the abstract: verifiable subset extraction
+(Move~1), post-quantum hybrid signing (Move~2), and a security analysis
+backed by an adversarial red-team study. Items not on the critical path to
+these contributions---in particular AES-256-CTR~$+$~HMAC-SHA-256 filters and
+live Sigstore service integration---are deferred to Phase~3 / future work to
+preserve focus.
+
+\subsection{Phase 1: Core Architecture and Verifiable Subset (Months 1--4)}
 
 \begin{enumerate}[nosep]
   \item \textbf{Platform evaluation (go/no-go, end of Month~1):} Verify that
@@ -1196,59 +1510,100 @@ trials for I/O-sensitive measurements.
     test file. If this gate fails, activate the standalone-library fallback
     (see~\S\ref{sec:risks}).
   \item Add \texttt{MerkleTree} struct to \texttt{rustyhdf5-format}, building
-    the tree from chunk hashes during write. Evaluate SHA-256 and BLAKE3.
+    the tree from chunk hashes during write. Evaluate
+    \textbf{SHA-256, BLAKE3, and KangarooTwelve} on HDF5-typical chunk sizes
+    (RQ4).
   \item Implement the hybrid storage layout: root-hash attribute
     (\texttt{\_merkle\_root}) on the dataset plus chunked companion dataset
-    (\texttt{/\_merkle/<name>}) for the full tree. Include automatic fallback
-    to attribute-only storage for small datasets ($\leq 256$ chunks).
-  \item Implement \texttt{verify\_root(dataset)} for instant root verification
-    from the attribute alone (rehash chunks, recompute root, compare).
-  \item Implement \texttt{verify\_chunk(dataset, chunk\_index)} for partial
-    verification via Merkle proof path, reading only $O(\log N)$ nodes from
-    the companion dataset via hyperslab.
-  \item Implement \texttt{verify\_dataset(dataset)} for full tree
-    verification (supersedes RustyHDF5's existing flat per-dataset hash).
-  \item Implement \texttt{extend\_merkle(dataset, new\_chunks)} for
-    incremental append and \texttt{update\_merkle(dataset, chunk\_index)} for
-    in-place overwrites, both updating the companion dataset and root
-    attribute along the affected $O(\log N)$ path.
+    (\texttt{/\_merkle/<name>}) for the full tree, including the
+    \emph{sparse Merkle} construction with constant-hash collapsing of
+    unallocated subtrees and the \emph{companion-integrity hash} bound into
+    the root attribute. Include automatic fallback to attribute-only storage
+    for small datasets ($\leq 256$ chunks).
+  \item Implement the verification API: \texttt{verify\_root}
+    (instant root check from attribute alone), \texttt{verify\_chunk}
+    (partial verification via proof path, $O(\log N)$ companion reads),
+    \texttt{verify\_dataset} (full tree verification), and
+    \texttt{extend\_merkle} / \texttt{update\_merkle} for incremental append
+    and in-place overwrite along the affected $O(\log N)$ path.
+  \item \textbf{Verifiable subset extraction (Move~1):}
+    implement \texttt{extract\_subset(dataset, hyperslab)} returning the
+    chunk set plus the subset proof~$\pi$ defined in~\S\ref{sec:subset},
+    and \texttt{verify\_subset(...)} for the recipient side. Include
+    witness deduplication for shared internal nodes and the coverage
+    certificate over the dataset's chunk-grid parameters. Empirically
+    characterize $|\pi|$ for rectangular, strided, and sparse hyperslab
+    shapes (RQ6).
   \item Benchmark against RustyHDF5's existing flat SHA-256 per-dataset
     verification on synthetic and NOAA datasets, measuring companion dataset
-    I/O overhead vs.\ attribute-only at varying chunk counts.
+    I/O overhead vs.\ attribute-only at varying chunk counts (RQ1, RQ2, RQ3).
 \end{enumerate}
 
-\subsection{Phase 2: Signing, Experiments, and C HDF5 Design Document (Months 4--7)}
+\subsection{Phase 2: Security Contributions and Evaluation (Months 4--7)}
 
 \begin{enumerate}[nosep]
-  \item Add Ed25519 root signing with keychain-based public key distribution.
-    Implement the versioned+timestamped signed payload for rollback resistance.
-  \item Implement AES-256-CTR encryption and HMAC-SHA-256 authentication as
-    new RustyHDF5 filter stages, including the nonce derivation scheme
-    (KDF with per-chunk version counter) and DEK/KEK/HKDF key management.
-  \item Run tamper detection experiments on NOAA and EQSIM datasets with
-    injected single-chunk, multi-chunk, metadata attribute (e.g., units,
-    dimensionality), and version-rollback modifications. Include a baseline
-    comparison against ZFS block-level checksumming to demonstrate the
-    portability advantage of application-level Merkle verification.
+  \item \textbf{Hybrid signing (Move~2):} implement
+    Ed25519~$+$~ML-DSA-65 signed roots over the canonical payload
+    $R = \text{root} \,\|\, \text{companion\_hash} \,\|\, v_\text{dataset}
+    \,\|\, \tau$ (\S\ref{sec:pq-hybrid}), with Ed25519~$+$~SLH-DSA-128s
+    available as an alternative. Measure end-to-end sign/verify cost,
+    signature and public-key size, and object-header impact at
+    $10^4$--$10^5$ datasets per file and $10^6$--$10^9$ chunks per dataset
+    (RQ7) on x86-64 (with and without AVX-512) and ARM.
+  \item Implement ChaCha20-Poly1305 as the primary AEAD encryption filter,
+    including the version-counter-based nonce derivation scheme
+    (\S\ref{sec:nonce}) and the AEAD-tag~$+$~version-counter binding into
+    the Merkle leaf hash (\S\ref{sec:signing}). The DEK / KEK / HKDF baseline
+    key management is implemented to the level required to run encrypted
+    end-to-end experiments; the broader key-management design is deferred to
+    the C~HDF5 design document.
+  \item \textbf{Security analysis (Move~4):} produce the
+    Bellare--Namprempre-style game-based argument
+    (\S\ref{sec:security-analysis}) for the EtM~$+$~version-counter~$+$
+    hybrid-signed-root construction. The Tamarin model is undertaken as a
+    stretch deliverable if the schedule permits.
+  \item \textbf{Adversarial red-team study (Move~3):} execute the white-box
+    attack suite of \S\ref{sec:adversarial} on NOAA and EQSIM datasets,
+    covering T1--T5 plus the subset-extraction attack classes. Report the
+    detected/undetected matrix and root-cause-analyze any successful attacks.
+  \item \textbf{Cloud object-store evaluation (Move~6):} implement the
+    companion-dataset proof retrieval over S3 range-GETs (via the existing
+    cloud read paths in RustyHDF5) and run the intra-region and
+    cross-region WAN measurements of \S\ref{sec:cloud-eval}. The HSDS and
+    h5coro APIs serve as deployment references but are not modified as part
+    of this work.
   \item Produce a \textbf{design document for C HDF5 integration} specifying:
     Merkle tree hybrid storage format (root-hash attribute plus companion
     dataset, with attribute-only fallback for small datasets), proposed
     HDF5 API additions (\texttt{H5Dverify\_chunk},
-    \texttt{H5Fget\_integrity\_root}), companion dataset preservation
-    semantics for copy/subset operations, crash consistency write-ordering
-    protocol (chunk $\to$ companion $\to$ root attribute), and filter pipeline
-    ordering requirements.
+    \texttt{H5Dextract\_subset}, \texttt{H5Fget\_integrity\_root}),
+    companion dataset preservation semantics for copy/subset operations,
+    crash consistency write-ordering protocol (chunk $\to$ companion
+    $\to$ root attribute), filter pipeline ordering requirements, and the
+    on-disk layout of the hybrid signed-root attribute.
   \item Write an RFC-style document for the HDF5 community.
 \end{enumerate}
 
-\paragraph{Stretch goal:}
+\subsection{Phase 3 / Stretch}
+
 \begin{enumerate}[nosep, resume]
-  \item Implement ChaCha20-Poly1305 encryption with AEAD integration
-    (Merkle leaf = $H(\text{Ciphertext}_k \| \text{Tag}_k \| v_k)$).
-  \item Integrate optional Sigstore transparency log publication for root
-    signatures, including Rekor inclusion proof storage as an HDF5 attribute
-    for offline verification, connecting to Task~2's plugin signing
-    infrastructure.
+  \item \textbf{Append-only log Merkle mode}: a
+    Certificate-Transparency-style variant supporting consistency proofs
+    between dataset versions (\emph{``version $n$ is a true prefix of version
+    $m$''}), targeting time-series and streaming science workloads.
+  \item \textbf{Tamarin symbolic model} of the verification protocol, with
+    machine-checked authenticity, freshness, and subset-soundness lemmas;
+    intended to elevate the security analysis from game-based argument to
+    machine-checked proof for a security-venue paper submission.
+  \item \textbf{Sigstore transparency-log publication} for hybrid signed
+    roots, including Rekor inclusion proof storage and RFC~3161 TSA token
+    storage for Long-Term Validation.
+  \item \textbf{AES-256-CTR~$+$~HMAC-SHA-256 filters} for FIPS-required
+    deployments where ChaCha20-Poly1305 is not acceptable.
+  \item \textbf{Provenance-graph integration}: bind the Merkle root as a
+    W3C PROV~\cite{w3cprov} \texttt{prov:Entity} identifier so that
+    derivation chains across datasets reference content-stable, signed
+    roots.
 \end{enumerate}
 
 
@@ -1258,28 +1613,47 @@ trials for I/O-sensitive measurements.
 
 \begin{table}[ht]
 \centering
-\caption{Mapping of deliverables to S2-D2 tasks.}
+\caption{Mapping of deliverables to S2-D2 tasks. The three primary research
+contributions targeted at the resulting publication are starred.}
 \label{tab:deliverables}
-\begin{tabular}{@{}p{6.5cm}ccc@{}}
+\begin{tabular}{@{}p{7.0cm}ccc@{}}
 \toprule
 Deliverable & S2-D2 Task & Phase & Scope \\
 \midrule
-Merkle-tree provenance implementation in RustyHDF5
+Merkle-tree provenance implementation in RustyHDF5 (hybrid storage,
+  sparse-tree, companion-integrity-hash)
   & Task 3 & 1 & Core \\
-Benchmark data: hash throughput, partial verification latency, storage overhead
+Hash benchmark: SHA-256, BLAKE3, KangarooTwelve at HPC chunk sizes
   & Task 3 & 1 & Core \\
-Ed25519 root signing with keychain distribution
+$\star$~Verifiable subset extraction protocol and implementation (Move~1)
+  & Task 3 & 1 & Core \\
+$\star$~Hybrid Ed25519~$+$~ML-DSA-65 signed roots with PQ measurements
+  at HDF5 scale (Move~2)
+  & Task 2, 3 & 2 & Core \\
+ChaCha20-Poly1305 AEAD filter with version-counter nonce derivation and
+  AEAD-tag binding into the Merkle leaf
   & Task 3 & 2 & Core \\
-AES-256-CTR and HMAC-SHA-256 filter implementations for RustyHDF5
+Game-based security argument for EtM~$+$~version-counter~$+$~hybrid-signed-root
+  (Move~4)
   & Task 3 & 2 & Core \\
-Tamper detection experiments on scientific datasets
+$\star$~Adversarial red-team study on NOAA and EQSIM datasets (T1--T5
+  $+$~subset-extraction attacks) (Move~3)
+  & Task 3 & 2 & Core \\
+Cloud object-store evaluation (S3 range-GET proof retrieval, WAN
+  measurements) (Move~6)
   & Task 3 & 2 & Core \\
 C HDF5 integration design document and RFC
   & Task 3 & 2 & Core \\
-ChaCha20-Poly1305 encryption with AEAD integration
-  & Task 3 & 2 & Stretch \\
-Sigstore transparency log integration
-  & Task 2, 3 & 2 & Stretch \\
+Append-only log Merkle mode with consistency proofs (Move~5)
+  & Task 3 & 3 & Stretch \\
+Tamarin symbolic model of verification protocol
+  & Task 3 & 3 & Stretch \\
+Sigstore transparency-log publication with Rekor + TSA storage
+  & Task 2, 3 & 3 & Stretch \\
+AES-256-CTR + HMAC-SHA-256 filters (FIPS-required deployments)
+  & Task 3 & 3 & Stretch \\
+PROV~\cite{w3cprov} provenance-graph integration
+  & Task 3 & 3 & Stretch \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1291,14 +1665,28 @@ Sigstore transparency log integration
     concrete technical mechanisms within the safety/security/privacy taxonomy
     and threat categorization (FMT, LIB, EXT, TCD) established by the HDF5
     SHINES project~\cite{shines}, grounding the vocabulary in working code.
-  \item \textbf{Task 2 connection}: Ed25519 root signing uses the same keychain
-    infrastructure being developed for plugin digital signatures. As a stretch
-    goal, Sigstore transparency log publication would further unify the trust
-    framework across S2-D2 thrusts.
+    The post-quantum threat T5 (\S\ref{sec:threat}) extends the SHINES
+    taxonomy with a long-archival risk category not yet covered by the
+    current vocabulary.
+  \item \textbf{Task 2 connection}: Ed25519~$+$~ML-DSA-65 hybrid root signing
+    uses the same keychain infrastructure being developed for plugin digital
+    signatures, while introducing the post-quantum hybrid pattern that Task~2
+    will need for plugin signing on the same archival timescales. As a
+    stretch goal, Sigstore transparency-log publication would further unify
+    the trust framework across S2-D2 thrusts.
   \item \textbf{Task 3 contribution}: The Merkle tree provides a concrete,
     benchmarked data authentication mechanism---the ``digital signatures for
     file object metadata'' deliverable---with hybrid storage, EtM pipeline
-    ordering, version-counter nonce derivation, and crash consistency protocol.
+    ordering, version-counter nonce derivation, and crash consistency
+    protocol. The verifiable subset extraction protocol
+    (\S\ref{sec:subset}) extends Task~3 beyond whole-dataset authentication
+    to cryptographically verifiable partial data delivery.
+  \item \textbf{Publication-shaped outputs}: The plan is structured around
+    three contributions intended to be evaluated in the resulting
+    paper---verifiable subset extraction (Move~1, RQ6), post-quantum hybrid
+    signing at HDF5 scale (Move~2, RQ7), and the adversarial red-team
+    soundness study (Move~3, RQ8)---each backed by an experimental section
+    with novel measurements not currently in the literature.
   \item \textbf{Design transfer}: The Rust prototype's architecture serves as a
     reference implementation and test vector generator for the C~HDF5
     integration, even though the production C code will not use Rust directly.
@@ -1338,13 +1726,33 @@ Sigstore transparency log integration
     copy that omits the \texttt{\_merkle} group breaks verification. The root
     hash attribute mitigates this (graceful degradation to root-level checking),
     and the design document will specify copy-preservation conventions.
-  \item[Scope.] The proposal covers a substantial amount of design and
-    implementation: hybrid storage, EtM pipeline, nonce derivation, key
-    management, crash consistency, signing, and tamper experiments. Phase~2
-    includes explicit \textbf{stretch goals} (ChaCha20-Poly1305 and Sigstore)
-    that can be deferred without affecting the core contribution. The Merkle
-    tree provenance (\S\ref{sec:merkle}) and the design document are the
+  \item[Scope concentration.] The plan is deliberately concentrated around
+    three publication-shaped contributions
+    (Moves~1, 2, and~3, plus the supporting security argument and cloud
+    evaluation). Items not on the critical path---AES-256-CTR~$+$~HMAC-SHA-256
+    filters, live Sigstore service integration, append-only log mode, the
+    Tamarin model, and PROV graph integration---are explicitly demoted to
+    Phase~3 / stretch and can be cut without affecting the core paper. The
+    Merkle-tree provenance (\S\ref{sec:merkle}), verifiable subset extraction
+    (\S\ref{sec:subset}), hybrid signing (\S\ref{sec:pq-hybrid}), and the
+    adversarial red-team study (\S\ref{sec:adversarial}) are the
     highest-priority deliverables.
+  \item[Cryptographic agility risk for ML-DSA / SLH-DSA.] FIPS 204 and 205
+    were finalized in 2024; production-quality Rust implementations
+    (e.g., \texttt{ml-dsa}, \texttt{pqcrypto-mldsa}) are still maturing.
+    We mitigate by treating the signature scheme as an
+    interchangeable trait behind a stable interface, allowing the
+    classical-only Ed25519 path to remain functional while the PQ
+    measurements catch up; if a chosen library proves unusable, the hybrid
+    measurements are conducted with a different audited implementation
+    (e.g., \texttt{liboqs} bindings) without disturbing the hybrid
+    construction.
+  \item[Adversarial-study scope.] A white-box red-team study can in principle
+    expand without bound. We bound it to the threat model of
+    \S\ref{sec:threat} (T1--T5) plus the three subset-extraction attack
+    classes of \S\ref{sec:adversarial}; novel attack categories discovered
+    during the study are documented as findings rather than chased to
+    closure within this work.
 \end{description}
 
 %% ============================================================================
