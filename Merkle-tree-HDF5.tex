@@ -109,6 +109,24 @@
   year      = {2026},
   note      = {NSF Safe-OSE Award No.\ 2534078}
 }
+@inproceedings{laurendeau2008smt,
+  author    = {Dahlberg, Rasmus and Pulls, Tobias and Peeters, Roel},
+  title     = {Efficient Sparse {Merkle} Trees: Caching Strategies and Secure (Non-)Membership Proofs},
+  booktitle = {Cryptology ePrint Archive, Report 2016/683},
+  year      = {2016}
+}
+@misc{trillian,
+  author    = {{Google}},
+  title     = {Trillian: A Transparent, Highly Scalable and Cryptographically Verifiable Data Store},
+  howpublished = {\url{https://github.com/google/trillian}},
+  year      = {2024}
+}
+@misc{rfc3161,
+  author    = {Adams, C. and Cain, P. and Pinkas, D. and Zuccherato, R.},
+  title     = {Internet {X.509} Public Key Infrastructure Time-Stamp Protocol ({TSP})},
+  howpublished = {RFC 3161},
+  year      = {2001}
+}
 @inproceedings{benet2014ipfs,
   author    = {Benet, Juan},
   title     = {{IPFS}---Content Addressed, Versioned, {P2P} File System},
@@ -522,6 +540,52 @@ tamper-evident temporal record. Importantly, the companion dataset storing the
 full Merkle tree must itself be protected---we address this via an integrity
 hash of the serialized companion included in the signed root attribute
 (\S\ref{sec:merkle-storage}).
+
+\subsection{Why Integrity Verification Independent of Encryption?}
+\label{sec:why-integrity}
+
+A natural question is whether Merkle-tree integrity verification is necessary
+when encryption can provide per-chunk authentication (e.g., via AEAD ciphers
+like ChaCha20-Poly1305). The answer is that encryption and Merkle-tree
+integrity serve \emph{different} security properties, and the most common
+scientific data use case requires integrity \emph{without} encryption:
+
+\begin{description}[nosep]
+  \item[Most scientific data is unencrypted.]
+    NOAA climate records, EQSIM earthquake simulations, astronomical survey
+    data, and genomic reference sequences are public or community-shared. These
+    datasets have no confidentiality requirement, but they critically need
+    tamper detection---a corrupted simulation checkpoint or a silently modified
+    climate record can invalidate months of downstream analysis. The Merkle
+    tree provides chunk-level integrity using only hashing (SHA-256 with SHA-NI
+    achieves $>$10\,GB/s), with no key management, no nonce derivation, and no
+    encryption overhead.
+  \item[Whole-dataset verification without decryption.]
+    Even for encrypted datasets, AEAD per-chunk authentication answers only
+    ``has \emph{this} chunk been tampered?'' after decrypting it. To answer
+    ``has \emph{any} chunk in my terabyte dataset been modified?'' without
+    decrypting all chunks, one checks the signed Merkle root---a single
+    32-byte comparison. This enables zero-trust data custody: storage nodes,
+    archival facilities, and collaborators without the decryption key can
+    verify dataset integrity via the Encrypt-then-MAC design
+    (\S\ref{sec:filter-order}).
+  \item[Tamper localization without decryption.]
+    If the root check fails, the Merkle tree localizes the corruption to
+    specific chunks in $O(\log N)$ without reading or decrypting unaffected
+    data. AEAD encryption alone requires decrypting every suspect chunk to
+    find the bad one.
+  \item[Provenance and non-repudiation.]
+    Encryption proves nothing about who created the data. The Ed25519-signed
+    Merkle root provides non-repudiable authorship---critical for regulatory
+    compliance, reproducibility audits, and data citation.
+\end{description}
+
+\noindent In summary, the Merkle tree is the \emph{primary} contribution of
+this proposal and is valuable even---especially---when encryption is not used.
+The encryption filters (AES-256-CTR, ChaCha20-Poly1305) are complementary
+components for datasets that \emph{do} require confidentiality; the EtM
+pipeline ordering ensures the Merkle tree's integrity properties are preserved
+in that case.
 
 \subsection{Approach}
 
