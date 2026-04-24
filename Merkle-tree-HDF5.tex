@@ -886,11 +886,24 @@ first-class research contribution. We define:
 
 The proof~$\pi$ has three components: (a)~the union of Merkle witnesses for
 the chunks in~$\mathcal{C}$, with shared internal nodes deduplicated;
-(b)~a \emph{coverage certificate} binding the dataset's chunk-grid parameters
-(stored in the dataset's object header and covered by the file-level root) to
-the requested hyperslab~$H$, so the verifier can recompute which chunks
-\emph{should} have been delivered; and (c)~the per-chunk version counters,
-which are bound into each leaf hash and therefore covered by the witnesses.
+(b)~a \emph{coverage certificate} consisting of the dataset's serialized
+object header (datatype, dataspace dimensionality, chunk grid parameters,
+and relevant attributes) together with its Merkle path to the file-level
+signed root, allowing the recipient to independently verify the trusted grid
+parameters and then recompute which chunks \emph{should} have been delivered
+for hyperslab~$H$; and (c)~the per-chunk version counters, which are bound
+into each leaf hash and therefore covered by the witnesses.
+
+The object header is typically only a few kilobytes, so including it in~$\pi$
+is negligible relative to the data payload. The verification workflow is:
+(i)~hash the delivered object header; (ii)~verify its Merkle path against
+the signed file-level root (using the same proof machinery as chunk
+verification); (iii)~extract the trusted chunk-grid parameters; (iv)~use
+those parameters to determine which chunk indices cover~$H$; and finally
+(v)~verify each chunk's Merkle witness against the signed root. This chain
+ensures the recipient cannot be deceived by a poisoned chunk-grid
+specification: the grid parameters are covered by the same signature as
+the data.
 
 \paragraph{Soundness sketch.}
 Define an adversary that wins if it produces $(\mathcal{C}', \pi')$ accepted
@@ -909,12 +922,23 @@ interaction with HDF5's filter pipeline---is part of the planned work
 The proof size~$|\pi|$ grows with both the hyperslab shape and the dataset's
 chunk grid. For an $r$-dimensional dataset with $n_i$ chunks per dimension and
 a hyperslab touching $m_i$ chunks per dimension, naive witness aggregation
-gives $|\pi| = O\bigl(\prod_i m_i \cdot \log \prod_i n_i\bigr)$. For
-strided or sparse hyperslabs typical of scientific access (e.g., every 10th
-time step), this can be substantially compressed by exploiting shared
-internal nodes; the optimal layout for the companion dataset that minimizes
-expected proof size for realistic access patterns is an open question we
-intend to investigate empirically (RQ6, \S\ref{sec:research-questions}).
+(no deduplication of shared internal nodes) gives
+$|\pi| = O\bigl(\prod_i m_i \cdot \log \prod_i n_i\bigr) = O(M \log N)$,
+where $M = \prod_i m_i$ is the number of requested chunks and
+$N = \prod_i n_i$ is the total chunk count. However, for the
+\emph{contiguous dense hyperslabs} that dominate scientific workloads
+(rectangular subgrids, time-window selections), shared internal Merkle
+nodes can be deduplicated during witness construction.  In the limiting
+case of a fully contiguous block, the unique witnesses are concentrated
+at the spatial \emph{boundary} of the hyperslab rather than its interior:
+proof size scales with the boundary surface area of the requested block,
+not its volume, yielding $O\bigl(\sum_i m_i \cdot \log n_i\bigr)$
+for axis-aligned hyperslabs under an ideal tree layout. For
+strided or irregular access patterns (e.g., every 10th time step),
+deduplication savings are smaller and depend on the companion dataset's
+linearization order. The optimal layout and the achievable compression
+ratio across realistic HPC access patterns is a research question we
+intend to characterize empirically (RQ6, \S\ref{sec:research-questions}).
 
 \subsection{Storage of the Merkle Tree}
 \label{sec:merkle-storage}
@@ -956,7 +980,16 @@ Merkle Tree} (SMT) architecture~\cite{laurendeau2008smt,trillian}: unallocated
 chunks receive a well-known constant leaf hash $H(\texttt{null})$. Because
 $H(H(\texttt{null}) \,\|\, H(\texttt{null}))$ is also a deterministic constant,
 entire empty subtrees collapse to precomputed values without writing them to the
-companion dataset. The companion dataset stores only nodes on paths to allocated
+companion dataset.
+
+To prevent second-preimage structural attacks (where a crafted chunk payload
+matches the 64-byte concatenation of two internal node hashes and is
+misinterpreted as an internal node), all hash inputs use \textbf{domain
+separation prefixes}: \texttt{0x00} is prepended before hashing leaf inputs,
+\texttt{0x01} before hashing internal node pairs, and \texttt{0x02} for the
+null sparse constant. This makes leaf and internal hashes structurally
+incompatible at the input level, regardless of the adversary's control over
+chunk content. The companion dataset stores only nodes on paths to allocated
 chunks, preserving $O(\log N)$ proof generation while the physical storage
 scales with the number of \emph{allocated} chunks, not the logical chunk space.
 This is analogous to the approach used by Google
@@ -1188,16 +1221,31 @@ verifier accepts the signature iff \emph{both} components verify, providing
 graceful degradation: until a CRQC exists, Ed25519 dominates verification
 time; once one exists, the ML-DSA-65 component preserves authenticity.
 
-\paragraph{Why this needs to be measured at HDF5 scale.}
+\paragraph{One signature, all datasets.}
+The hybrid signature is applied \textbf{once} to the global
+\emph{file-level} root that aggregates all per-dataset roots
+(\S\ref{sec:merkle-storage}). Individual datasets contribute a
+32-byte hash to the global tree; they do not each carry a
+3.3~KB~ML-DSA-65 signature. For a file with $10^5$ datasets,
+the total signing overhead is one 3.3~KB signature (plus a $\sim$2~KB
+public key) stored in a single file-level attribute, not $10^5 \times
+3.3$~KB~$= 330$~MB spread across per-dataset object headers. Signing
+and verifying an individual dataset at rest still requires only
+$O(\log D)$ hash reads from the companion tree (where $D$ is the
+number of datasets in the file), never a per-dataset PQ signature.
+
+\paragraph{Why this still needs to be measured at HDF5 scale.}
 ML-DSA-65 signatures are $\sim$3.3~KB and public keys are $\sim$2~KB, versus
 64~B and 32~B for Ed25519. SLH-DSA signatures are larger still ($\sim$8~KB
-to $\sim$30~KB depending on parameters). At the dataset level this is
-negligible, but a \emph{file-level} signed root that aggregates roots from
-$10^4$--$10^5$ datasets in a single HDF5 file (typical of HPC checkpoint
-files) interacts with HDF5's object-header encoding rules in ways that have
-not been measured. Likewise, batch verification throughput at $10^6$--$10^9$
-chunks under per-dataset verification is unknown for any PQ scheme on HDF5
-workloads. Producing this measurement is RQ7
+to $\sim$30~KB depending on parameters). Even with a single file-level
+signature, the \emph{object-header encoding} of the file-level root attribute
+(which contains the root hash, companion integrity hash, version counter,
+timestamp, and the hybrid signature blob) must remain within HDF5's
+attribute-storage limits. HDF5 object headers begin failing silently past
+$\sim$64~KB and cannot accommodate 330~MB. Verifying that the
+file-level root attribute stays within these limits for all supported
+parameter combinations, and measuring batch verification throughput at
+$10^6$--$10^9$ chunks, is the substance of RQ7
 (\S\ref{sec:research-questions}) and is intended to be a primary empirical
 contribution of the resulting paper, supplying the first published
 PQ-signature performance numbers for scientific data archives.
@@ -1282,8 +1330,15 @@ research:
     update, and verification protocols, including the version-counter
     binding into leaf hashes and the hybrid-signature root, with
     machine-checked verification of the principal security lemmas
-    (authenticity, freshness, subset soundness). The Tamarin model would
-    be released alongside the implementation.
+    (authenticity, freshness, subset soundness). Because Tamarin is
+    designed for finite protocol state machines and does not natively
+    handle unbounded recursive data structures, the model will prove
+    lemmas over a \textbf{depth-bounded instantiation} of the tree
+    (e.g., depth $d \leq 30$, covering trees of up to $10^9$ chunks).
+    Security at arbitrary depth is argued by structural induction over the
+    depth-bounded proof, a standard technique in symbolic tree analysis.
+    The Tamarin model and all proof scripts would be released alongside
+    the implementation.
 \end{description}
 
 \noindent The game-based argument is treated as a Phase~2 deliverable; the
