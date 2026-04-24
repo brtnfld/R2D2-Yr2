@@ -1,0 +1,1275 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{filecontents}
+
+\begin{filecontents}{references.bib}
+@article{tang2022async,
+  author    = {Tang, Houjun and Koziol, Quincey and Ravi, Jyotsna and Byna, Suren},
+  title     = {Transparent Asynchronous Parallel {I/O} Using Background Threads},
+  journal   = {IEEE Transactions on Parallel and Distributed Systems},
+  volume    = {33},
+  number    = {4},
+  pages     = {891--902},
+  year      = {2022}
+}
+@inproceedings{ravi2023runway,
+  author    = {Ravi, Jyotsna and Byna, Suren and Becchi, Michaela},
+  title     = {Runway: In-transit Data Compression on Heterogeneous {HPC} Systems},
+  booktitle = {2023 IEEE/ACM 23rd International Symposium on Cluster, Cloud and Internet Computing (CCGrid)},
+  pages     = {229--239},
+  year      = {2023}
+}
+@inproceedings{newman2022sigstore,
+  author    = {Newman, Zachary and Meyers, John Speed and Torres-Arias, Santiago},
+  title     = {Sigstore: Software Signing for Everybody},
+  booktitle = {Proceedings of the 2022 ACM SIGSAC Conference on Computer and Communications Security (CCS)},
+  pages     = {2353--2367},
+  year      = {2022}
+}
+@inproceedings{merkle1987tree,
+  author    = {Merkle, Ralph C.},
+  title     = {A Digital Signature Based on a Conventional Encryption Function},
+  booktitle = {Advances in Cryptology --- CRYPTO '87},
+  pages     = {369--378},
+  year      = {1987}
+}
+@misc{rustyhdf5,
+  author    = {{RedClaw Systems}},
+  title     = {{rustyHDF5}: Pure-Rust {HDF5} Library},
+  year      = {2026},
+  howpublished = {\url{https://github.com/redclawsystems/rustyhdf5}}
+}
+@misc{hdf5,
+  author    = {{The HDF Group}},
+  title     = {{HDF5} Library and File Format},
+  howpublished = {\url{https://www.hdfgroup.org/solutions/hdf5/}}
+}
+@inproceedings{folk1999hdf5,
+  author    = {Folk, Mike and Cheng, Albert and Yates, Kim},
+  title     = {{HDF5}: A File Format and {I/O} Library for High Performance Computing Applications},
+  booktitle = {Proceedings of Supercomputing},
+  volume    = {99},
+  pages     = {5--33},
+  year      = {1999}
+}
+@article{peisert2021trustworthy,
+  author    = {Peisert, Sean},
+  title     = {Trustworthy Scientific Computing},
+  journal   = {Communications of the ACM},
+  volume    = {64},
+  pages     = {18--21},
+  year      = {2021}
+}
+@misc{blake3,
+  author    = {O'Connor, Jack and Aumasson, Jean-Philippe and Neves, Samuel and Wilcox-O'Hearn, Zooko},
+  title     = {{BLAKE3}: One Function, Fast Everywhere},
+  year      = {2020},
+  howpublished = {\url{https://blake3.io}}
+}
+@inproceedings{laurie2014certificate,
+  author    = {Laurie, Ben and Langley, Adam and Kasper, Emilia},
+  title     = {Certificate Transparency},
+  booktitle = {RFC 6962},
+  year      = {2013}
+}
+@article{mccallen2021eqsim,
+  author    = {McCallen, David and Petersson, N. Anders and Rodgers, Arthur and others},
+  title     = {{EQSIM}---A Multidisciplinary Framework for Fault-to-Structure Earthquake Simulations on Exascale Computers},
+  journal   = {Earthquake Spectra},
+  volume    = {37},
+  number    = {2},
+  pages     = {707--735},
+  year      = {2021}
+}
+@misc{wgpu,
+  title     = {{wgpu}: Safe and Portable {GPU} Abstraction in {Rust}},
+  howpublished = {\url{https://wgpu.rs}},
+  year      = {2026}
+}
+@misc{rayon,
+  title     = {Rayon: Data-Parallelism Library for {Rust}},
+  howpublished = {\url{https://github.com/rayon-rs/rayon}},
+  year      = {2026}
+}
+@misc{shines,
+  author    = {{The HDF Group}},
+  title     = {{HDF5 SHINES}: Securing {HDF5} for Industry, National Security, Engineering, and Science},
+  howpublished = {\url{https://www.hdfgroup.org/projects/hdf5-shines/}},
+  year      = {2026},
+  note      = {NSF Safe-OSE Award No.\ 2534078}
+}
+@inproceedings{benet2014ipfs,
+  author    = {Benet, Juan},
+  title     = {{IPFS}---Content Addressed, Versioned, {P2P} File System},
+  booktitle = {arXiv preprint arXiv:1407.3561},
+  year      = {2014}
+}
+@inproceedings{bonwick2003zfs,
+  author    = {Bonwick, Jeff and Ahrens, Matt and Henson, Val and Maybee, Mark and Shellenbaum, Mark},
+  title     = {The Zettabyte File System},
+  booktitle = {Proceedings of the 2nd USENIX Conference on File and Storage Technologies (FAST)},
+  year      = {2003}
+}
+@misc{git_internals,
+  author    = {Torvalds, Linus and Hamano, Junio C.},
+  title     = {Git: A Content-Addressable Filesystem},
+  howpublished = {\url{https://git-scm.com/book/en/v2/Git-Internals-Git-Objects}},
+  year      = {2005}
+}
+@article{tanenbaum2009authenticated,
+  author    = {Tamassia, Roberto},
+  title     = {Authenticated Data Structures},
+  journal   = {European Symposium on Algorithms (ESA)},
+  pages     = {2--5},
+  year      = {2003}
+}
+@inproceedings{li2021fastore,
+  author    = {Li, Jialin and Hoefler, Torsten and Aguilera, Marcos K. and Unnikrishnan, Llu\'{i}s},
+  title     = {Authenticated Storage Using Small Trusted Hardware},
+  booktitle = {Proceedings of the ACM SIGOPS 28th Symposium on Operating Systems Principles (SOSP)},
+  pages     = {186--202},
+  year      = {2021}
+}
+@inproceedings{miles2007prov,
+  author    = {Miles, Simon and Groth, Paul and Munroe, Steve and Moreau, Luc},
+  title     = {{PrIMe}: A Methodology for Developing Provenance-Aware Applications},
+  booktitle = {ACM Transactions on Software Engineering and Methodology},
+  volume    = {20},
+  number    = {3},
+  pages     = {1--42},
+  year      = {2011}
+}
+@misc{w3cprov,
+  author    = {{W3C}},
+  title     = {{PROV}-DM: The {PROV} Data Model},
+  howpublished = {\url{https://www.w3.org/TR/prov-dm/}},
+  year      = {2013}
+}
+@inproceedings{moreau2008provone,
+  author    = {Moreau, Luc and Clifford, Ben and Freire, Juliana and others},
+  title     = {The Open Provenance Model Core Specification (v1.1)},
+  booktitle = {Future Generation Computer Systems},
+  volume    = {27},
+  pages     = {743--756},
+  year      = {2011}
+}
+@inproceedings{thain2005distributed,
+  author    = {Thain, Douglas and Tannenbaum, Todd and Livny, Miron},
+  title     = {Distributed Computing in Practice: The {Condor} Experience},
+  booktitle = {Concurrency and Computation: Practice and Experience},
+  volume    = {17},
+  pages     = {323--356},
+  year      = {2005}
+}
+@misc{zarr2024,
+  author    = {{Zarr Developers}},
+  title     = {Zarr: An Implementation of Chunked, Compressed, {N}-Dimensional Arrays},
+  howpublished = {\url{https://zarr.dev}},
+  year      = {2024}
+}
+@inproceedings{greenfield2015asdf,
+  author    = {Greenfield, Perry and Droettboom, Michael and Bray, Erik},
+  title     = {{ASDF}: A New Data Format for Astronomy},
+  booktitle = {Astronomy and Computing},
+  volume    = {12},
+  pages     = {240--251},
+  year      = {2015}
+}
+@article{rodiger2016heterogeneous,
+  author    = {R\"{o}diger, Wolf and M\"{u}hlbauer, Tobias and Kemper, Alfons and Neumann, Thomas},
+  title     = {High-Speed Query Processing over High-Speed Networks},
+  journal   = {Proceedings of the VLDB Endowment},
+  volume    = {9},
+  number    = {4},
+  pages     = {228--239},
+  year      = {2016}
+}
+@inproceedings{lee2021hetpipe,
+  author    = {Lee, Jaewan and Kim, Doyoung and Ham, Tae Jun and Lee, Jae W.},
+  title     = {{HetPipe}: Enabling Large {DNN} Training on (Whimpy) Heterogeneous {GPU} Clusters through Integration of Pipelined Model Parallelism and Data Parallelism},
+  booktitle = {Proceedings of the USENIX Annual Technical Conference (ATC)},
+  pages     = {307--321},
+  year      = {2021}
+}
+@inproceedings{kimpe2012nonblocking,
+  author    = {Kimpe, Dries and Ross, Robert},
+  title     = {Nonblocking and Asynchronous {I/O} for Scientific Applications},
+  booktitle = {Proceedings of the 4th USENIX Workshop on Hot Topics in Storage and File Systems (HotStorage)},
+  year      = {2012}
+}
+@inproceedings{ovsyannikova2023netcdf,
+  author    = {Ovsyannikova, Ekaterina and Filgueira, Rosa and Sherwood, Simon},
+  title     = {Towards Trusted Data Pipelines for Earth System Science: Data Integrity in {NetCDF}},
+  booktitle = {2023 IEEE eScience Conference},
+  pages     = {1--10},
+  year      = {2023}
+}
+@inproceedings{dai2018two,
+  author    = {Dai, Dong and Ross, Robert B. and Carns, Philip and Byna, Suren and Chen, Yong},
+  title     = {Toward a Holistic Understanding of I/O Workloads on Parallel File Systems},
+  booktitle = {IEEE Transactions on Parallel and Distributed Systems},
+  volume    = {31},
+  number    = {6},
+  pages     = {1337--1353},
+  year      = {2020}
+}
+@inproceedings{laurendeau2008smt,
+  author    = {Dahlberg, Rasmus and Pulls, Tobias and Peeters, Roel},
+  title     = {Efficient Sparse {Merkle} Trees: Caching Strategies and Secure (Non-)Membership Proofs},
+  booktitle = {Cryptology ePrint Archive, Report 2016/683},
+  year      = {2016}
+}
+@misc{trillian,
+  author    = {{Google}},
+  title     = {Trillian: A Transparent, Highly Scalable and Cryptographically Verifiable Data Store},
+  howpublished = {\url{https://github.com/google/trillian}},
+  year      = {2024}
+}
+@misc{rfc3161,
+  author    = {Adams, C. and Cain, P. and Pinkas, D. and Zuccherato, R.},
+  title     = {Internet {X.509} Public Key Infrastructure Time-Stamp Protocol ({TSP})},
+  howpublished = {RFC 3161},
+  year      = {2001}
+}
+\end{filecontents}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red!60!black},
+  frame=single,
+  breaklines=true,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  xleftmargin=2em
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small S2-D2 Research Proposal --- DRAFT}
+\lhead{\small Merkle-Tree Provenance for Scientific Data}
+\cfoot{\thepage}
+
+\title{%
+  \textbf{Merkle-Tree Provenance for Self-Describing Scientific Data}\\[0.5em]
+  \large A Research Plan for the S2-D2 Framework\\
+  Using RustyHDF5 as an Experimental Platform
+}
+
+\author{
+  M.~Scot Breitenfeld\\
+  The HDF Group\\
+  \texttt{brtnfld@hdfgroup.org}
+}
+
+\date{Draft --- \today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document proposes a research plan within the S2-D2
+(Securing Self-Describing Data) project that addresses the Task~3 (data
+authentication) objective. We propose a
+\emph{Merkle-tree provenance} scheme---implemented as a new capability in
+RustyHDF5---that supports incremental integrity verification, partial chunk
+verification, and tamper localization for HDF5 datasets at scale, informed by
+the HDF5 SHINES (Securing HDF5 for Industry, National Security, Engineering,
+and Science) security taxonomy developed under the NSF Safe-OSE
+program~\cite{shines}. The design employs a hybrid storage layout (root-hash
+attribute plus chunked companion dataset), an Encrypt-then-MAC filter pipeline
+ordering, version-counter nonce derivation for safe in-place updates, and
+Ed25519 signing with rollback resistance. Together, these mechanisms form a
+concrete prototype of chunk-level data integrity and authentication for the
+S2-D2 framework. The RustyHDF5 pure-Rust HDF5
+implementation~\cite{rustyhdf5} serves as the experimental platform, enabling
+rapid prototyping before design decisions are committed to the C~HDF5 library.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%% ============================================================================
+\section{Introduction and Motivation}
+\label{sec:intro}
+
+The S2-D2 project~\cite{hdf5} aims to comprehensively secure self-describing
+data formats and libraries, with HDF5~\cite{folk1999hdf5} as the primary target
+for integration. The project is organized around four research thrusts:
+Task~1 develops a systematic threat model and security policy framework for
+self-describing data; Task~2 addresses plugin and library verification through
+digital signatures and trust chains; Task~3 secures the data itself via
+encryption and authentication mechanisms; and Task~4 constructs the S2-D2
+runtime framework, including the Security Task Scheduler, to execute security
+operations with minimal performance overhead. This proposal contributes
+primarily to Task~3, with a secondary connection to Task~2 through
+shared trust infrastructure (Ed25519 keychain and optional Sigstore signing).
+
+The core gap this research addresses:
+
+\paragraph{Granularity of integrity verification.}
+Current integrity mechanisms in HDF5 operate at either too coarse or too fine a
+granularity. The file format's v2 metadata checksums (Jenkins lookup3) protect
+individual metadata pages but do not cover raw data. RustyHDF5 includes a basic
+provenance feature that computes a single SHA-256 hash per dataset, but this
+requires rehashing the entire dataset to verify integrity---infeasible for
+petabyte-scale scientific data where a researcher may access only a small
+hyperslab. Neither the C~HDF5 library nor RustyHDF5 currently provides a
+mechanism for \emph{partial verification} (verifying a subset of chunks without
+touching the rest), \emph{incremental signing} (extending a dataset without
+invalidating existing signatures), or \emph{tamper localization} (identifying
+which specific chunks were modified).
+
+This proposal addresses this gap using RustyHDF5~\cite{rustyhdf5}---a pure-Rust
+HDF5 implementation with zero C dependencies---as an experimental platform. The
+choice of RustyHDF5 is motivated by three factors: (1)~its modular crate
+architecture (separate crates for format parsing, I/O, filters, SIMD
+acceleration, and GPU compute) maps naturally to the S2-D2 framework
+components, providing clean integration points for new security layers;
+(2)~Rust's type system and memory safety guarantees enable
+rapid, safe prototyping of cryptographic components that would be
+error-prone in C; and (3)~the existing filter pipeline (deflate, shuffle,
+fletcher32) provides an extensible framework into which new security
+filters---including encryption and Merkle hashing---can be inserted without
+modifying the core I/O path.
+
+\paragraph{Scope clarification.}
+RustyHDF5 does not currently include encryption or cryptographic signing
+capabilities. Its provenance feature stores per-dataset SHA-256 content hashes
+and creator metadata as HDF5 attributes, but this is limited to flat
+whole-dataset hashing. The Merkle-tree provenance and the encryption
+filters required for authenticated data protection will be implemented as new
+capabilities in this research. The work is also informed by the HDF5 SHINES
+project~\cite{shines}---The HDF Group's NSF Safe-OSE effort (Award No.\ 2534078) to develop a
+safety, security, and privacy taxonomy for the HDF5 ecosystem---which provides
+the threat categorization and shared vocabulary within which these technical
+mechanisms operate.
+
+%% ============================================================================
+\section{Background}
+\label{sec:background}
+
+\subsection{HDF5 Data Model and Chunked Storage}
+
+HDF5 organizes data into \emph{groups} (hierarchical containers) and
+\emph{datasets} (multi-dimensional arrays). Datasets may use \emph{chunked
+storage}, where the array is divided into fixed-size rectangular tiles stored
+independently. Chunks pass through a \emph{filter pipeline} that applies
+transformations (shuffle, compression, checksum) before writing to storage.
+Chunked storage is the dominant layout for large scientific datasets because it
+enables partial I/O, compression, and extensibility (resizable dimensions).
+
+\subsection{RustyHDF5 Architecture}
+
+RustyHDF5 is organized as 11 Rust crates in a layered architecture:
+
+\begin{itemize}[nosep]
+  \item \texttt{rustyhdf5-format}: \texttt{no\_std}-compatible binary format parser/writer
+  \item \texttt{rustyhdf5-io}: I/O backends (buffered, mmap, async, VOL, sub-filing)
+  \item \texttt{rustyhdf5-filters}: Filter pipeline (deflate, shuffle, fletcher32)
+  \item \texttt{rustyhdf5-accel}: SIMD acceleration (NEON, AVX2, AVX-512)
+  \item \texttt{rustyhdf5-gpu}: GPU compute via wgpu~\cite{wgpu}
+  \item \texttt{rustyhdf5}: High-level ergonomic API
+\end{itemize}
+
+\noindent RustyHDF5 includes a basic provenance feature in
+\texttt{rustyhdf5-format} that stores per-dataset SHA-256 content hashes,
+creator identity, timestamps, and optional source identifiers as HDF5
+attributes. Integrity verification (\texttt{verify\_dataset()}) rehashes the
+entire dataset and compares against the stored hash. Notably, RustyHDF5 does
+\emph{not} currently include encryption, HMAC, or digital signature support in
+its filter pipeline---the \texttt{rustyhdf5-filters} crate provides only
+deflate, shuffle, and fletcher32. Cryptographic operations will therefore be
+implemented as new filters and crate modules as part of this research.
+
+\subsection{S2-D2 Framework Architecture}
+
+The S2-D2 runtime (Figure~5 of the proposal) consists of three components:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Data Protection Factory (DPF)}: A registry of encryption, masking,
+    tokenization, and verification libraries with a verification layer for
+    authorizing which libraries may be used.
+  \item \textbf{Resource Manager (RM)}: Detects available compute and storage
+    resources (CPU, GPU, DPU) and estimates execution costs.
+  \item \textbf{Security Task Scheduler (STS)}: Dispatches security operations
+    using asynchronous and proactive execution strategies to hide latency.
+    (The STS prototype is being developed separately; this proposal focuses on
+    the Merkle-tree provenance layer that defines \emph{what} to verify.)
+\end{enumerate}
+
+\subsection{Related Work}
+\label{sec:related}
+
+\paragraph{Merkle trees in storage systems.}
+Merkle trees~\cite{merkle1987tree} are widely used for integrity verification
+in storage and distributed systems. ZFS~\cite{bonwick2003zfs} employs
+block-level checksums organized in a Merkle-like tree to detect silent data
+corruption, providing self-healing via redundant copies. Git~\cite{git_internals}
+uses a content-addressed Merkle DAG (blobs, trees, commits) to ensure
+repository integrity and enable efficient synchronization.
+IPFS~\cite{benet2014ipfs} generalizes this to a distributed filesystem where
+every block is content-addressed via a Merkle DAG. Certificate
+Transparency~\cite{laurie2014certificate} uses append-only Merkle trees to
+provide tamper-evident logs for TLS certificates, and
+Sigstore~\cite{newman2022sigstore} extends this model to software artifact
+signing. Our work adapts the Merkle tree concept specifically to HDF5's
+chunked storage model, where the natural unit of integrity is the chunk (not
+the filesystem block or Git blob), and where partial verification must align
+with HDF5's hyperslab access patterns.
+
+\paragraph{Integrity in scientific data formats.}
+HDF5's v2 metadata checksums (Jenkins lookup3) cover metadata pages but not
+raw data~\cite{folk1999hdf5}. Ovsyannikova et al.~\cite{ovsyannikova2023netcdf}
+have explored data integrity pipelines for NetCDF, though without sub-file
+granularity. Zarr~\cite{zarr2024} stores each chunk as an independent object
+(file or cloud blob), making per-chunk checksumming straightforward but
+lacking a hierarchical integrity structure that enables efficient partial
+verification. ASDF~\cite{greenfield2015asdf} (Advanced Scientific Data
+Format) includes per-block checksums but no tree-structured aggregation.
+None of these formats currently provides Merkle-tree-based partial
+verification, incremental signing, or tamper localization at sub-dataset
+granularity.
+
+\paragraph{Authenticated data structures.}
+Tamassia~\cite{tanenbaum2009authenticated} formalized authenticated data
+structures, where a trusted source publishes a digest and an untrusted
+responder proves query correctness against that digest.
+Li et al.~\cite{li2021fastore} explored authenticated storage using small
+trusted hardware enclaves. Our Merkle tree over HDF5 chunks is an instance of
+an authenticated data structure where the signed root serves as the digest and
+Merkle proofs serve as authentication paths, adapted to the specific access
+patterns and I/O characteristics of scientific data.
+
+\paragraph{Data provenance.}
+The W3C PROV data model~\cite{w3cprov} and systems such as
+ProvONE~\cite{moreau2008provone} provide general-purpose provenance tracking
+for scientific workflows. These systems are complementary to our work: they
+track \emph{derivation history} (which computations produced a dataset), while
+our Merkle tree tracks \emph{content integrity} (whether the bytes have been
+modified since signing). The two could be combined: a Merkle root hash serves
+as a content-stable identifier that provenance records can reference.
+
+\paragraph{Asynchronous I/O for HDF5.}
+Tang et al.~\cite{tang2022async} demonstrated transparent asynchronous I/O for
+HDF5 using background threads, achieving significant latency hiding for
+metadata operations. This work is relevant to eventual STS integration of the
+Merkle-tree provenance operations, but the STS prototype itself is outside the
+scope of this proposal.
+
+%% ============================================================================
+\section{Merkle-Tree Provenance}
+\label{sec:merkle}
+
+\subsection{Threat Model}
+\label{sec:threat}
+
+Before describing the Merkle tree construction, we define the adversary model
+that motivates the design. We consider three threat categories, drawn from the
+SHINES taxonomy~\cite{shines}:
+
+\begin{description}[nosep]
+  \item[T1: Storage-level tampering (TCD).]
+    An adversary with read/write access to the storage medium (e.g., a
+    compromised storage node, a malicious administrator, or a man-in-the-middle
+    during file transfer) modifies chunk data, metadata, or both. The adversary
+    may attempt \emph{targeted modification} (altering specific chunks while
+    leaving the rest intact) or \emph{wholesale replacement} (substituting the
+    entire file). The adversary does \emph{not} possess the signing private key.
+  \item[T2: Silent data corruption (FMT).]
+    Hardware-level bit-flips, firmware bugs, or filesystem errors introduce
+    undetected modifications to stored chunks. This is a non-adversarial
+    integrity threat that existing HDF5 v2 metadata checksums partially
+    address for metadata pages, but not for raw data.
+  \item[T3: Provenance forgery (EXT).]
+    An adversary attempts to attribute a dataset to a different creator or
+    institution, or to claim that a modified dataset is the original. This
+    requires non-repudiable authorship via digital signatures.
+  \item[T4: Rollback / stale data attack.]
+    An adversary with storage access replaces the current version of a file
+    (data, Merkle tree, and signed root) with a valid, properly signed
+    \emph{older} version of the same file. The cryptography verifies
+    perfectly, but the researcher operates on stale data (e.g., a simulation
+    checkpoint rolled back to a pre-correction state). This threat requires
+    temporal ordering beyond what a static Merkle root provides.
+\end{description}
+
+\noindent Each proposed mechanism maps to these threats as follows. The Merkle
+tree detects and localizes T1~(targeted modification) and T2 at chunk
+granularity via partial verification. The signed root hash defeats T1~(wholesale
+replacement) and T3, since the adversary cannot produce a valid signature
+without the private key. The Ed25519 signature binds authorship to the root,
+and optional Sigstore publication provides a public, append-only audit trail
+for T3. To defend against T4, the signed root attribute includes a
+\textbf{monotonic dataset version number} that is incremented on every write
+(append or in-place update), plus a high-resolution timestamp. A verifier can
+reject a file whose version number is lower than a previously observed version,
+and Sigstore transparency log publication (if enabled) provides an independent,
+tamper-evident temporal record. Importantly, the companion dataset storing the
+full Merkle tree must itself be protected---we address this via an integrity
+hash of the serialized companion included in the signed root attribute
+(\S\ref{sec:merkle-storage}).
+
+\subsection{Approach}
+
+We propose constructing a Merkle hash tree~\cite{merkle1987tree} over HDF5
+chunked datasets where:
+
+\begin{itemize}[nosep]
+  \item \textbf{Leaf nodes} are content hashes of individual chunks, computed
+    \emph{after} all filter pipeline operations (compression, shuffle, and
+    encryption) so that the hash covers the exact ciphertext bytes stored on
+    disk (see~\S\ref{sec:filter-order} for rationale).
+  \item \textbf{Internal nodes} aggregate child hashes pairwise up to a single
+    root hash per dataset.
+  \item \textbf{File-level root} aggregates all dataset roots plus file metadata
+    (superblock hash, group structure) into a single integrity value.
+  \item The root may be \textbf{signed with an asymmetric key} (Ed25519 or via
+    Sigstore~\cite{newman2022sigstore}) to establish non-repudiable
+    authorship.
+\end{itemize}
+
+\noindent This structure enables three operations that flat hashing cannot:
+
+\begin{description}[nosep]
+  \item[Partial verification.] Verifying chunk~$k$ requires only the
+    $O(\log N)$ sibling hashes along the path from leaf~$k$ to the root, not
+    all $N$ chunk hashes.
+  \item[Incremental extension.] Appending chunks to a resizable dataset adds
+    new leaves and recomputes only the affected root path.
+  \item[In-place update.] Overwriting an existing chunk~$k$ (which HDF5
+    permits for any chunk in a dataset) requires recomputing only the
+    $O(\log N)$ hashes along the path from leaf~$k$ to the root---the same
+    cost as appending a new chunk. This is important because HDF5 workloads
+    frequently update data in place (e.g., checkpoint/restart, correction of
+    erroneous values). Note that in-place updates interact critically with
+    the encryption layer: see~\S\ref{sec:nonce} for the required nonce
+    derivation scheme.
+  \item[Tamper localization.] Walking the tree from root to leaves identifies
+    exactly which subtree---and ultimately which chunks---have been modified.
+\end{description}
+
+\paragraph{File-level root and metadata protection.}
+For files containing multiple datasets, the file-level root aggregates all
+per-dataset roots. When a dataset is added, removed, or extended, only the
+affected dataset root and the file-level aggregation are recomputed---not the
+trees of unmodified datasets. For files with hundreds of datasets, the
+file-level root is computed lazily (on explicit request or at file close) rather
+than eagerly on every dataset modification, avoiding quadratic overhead during
+batch creation workflows.
+
+Crucially, the file-level root must also cover \textbf{HDF5 metadata}, not just
+chunk data. An attacker who leaves array data intact but modifies an attribute
+(e.g., changing \texttt{units="Celsius"} to \texttt{units="Fahrenheit"}) or
+alters the dataspace dimensionality corrupts the scientific result while passing
+chunk-level Merkle verification. To prevent this, each dataset's contribution
+to the file-level root includes a hash of its serialized object header
+(datatype, dataspace, creation properties, and user-defined attributes). This
+is analogous to how Zarr~v3 secures metadata via its consolidated
+\texttt{zarr.json} manifest~\cite{zarr2024}. The object header hash is stored
+in the \texttt{\_merkle\_root} attribute alongside the data root hash, and both
+are covered by the Ed25519 signature.
+
+\paragraph{Parallel Merkle tree construction.}
+In HPC workflows, many compute ranks may write to distinct chunks of the same
+dataset simultaneously via MPI-IO (in C~HDF5) or rayon (in RustyHDF5). If each
+writer independently tries to update the $O(\log N)$ path from its leaf to the
+root in the companion dataset, the internal tree nodes become contention
+hotspots---particularly near the root. We address this with a
+\textbf{map-reduce construction protocol}:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Map phase (fully parallel):} Each writer computes its leaf hash
+    independently. This is embarrassingly parallel---no coordination required.
+  \item \textbf{Reduce phase (coordinated):} Writers pass their leaf hashes to a
+    designated coordinator (rank~0, or a dedicated I/O aggregator) that computes
+    the internal nodes level-by-level and writes the companion dataset. For
+    initial file creation, this can use MPI collective I/O to write the companion
+    dataset in a single pass. For incremental updates affecting a small number of
+    chunks, only the affected paths need recomputation, and the coordinator
+    serializes the companion writes.
+\end{enumerate}
+
+\noindent This protocol ensures that the companion dataset is written
+consistently without lock contention. The C~HDF5 design document will specify
+how this integrates with HDF5's existing collective I/O infrastructure and the
+SWMR (Single-Writer/Multiple-Reader) access mode.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  node distance=0.8cm and 0.5cm,
+  hash/.style={rectangle, draw, rounded corners, minimum width=1.8cm,
+               minimum height=0.6cm, font=\scriptsize\ttfamily},
+  chunk/.style={rectangle, draw, fill=blue!10, minimum width=1.6cm,
+                minimum height=0.6cm, font=\scriptsize},
+  arr/.style={-{Stealth[length=2mm]}, thick},
+  level/.style={font=\scriptsize\itshape, text=gray}
+]
+
+% Chunks (leaves)
+\node[chunk] (c0) {Chunk 0};
+\node[chunk, right=0.3cm of c0] (c1) {Chunk 1};
+\node[chunk, right=0.3cm of c1] (c2) {Chunk 2};
+\node[chunk, right=0.3cm of c2] (c3) {Chunk 3};
+\node[chunk, right=0.3cm of c3] (c4) {Chunk 4};
+\node[chunk, right=0.3cm of c4] (c5) {Chunk 5};
+\node[chunk, right=0.3cm of c5] (c6) {Chunk 6};
+\node[chunk, right=0.3cm of c6] (c7) {Chunk 7};
+
+% Leaf hashes
+\node[hash, above=0.5cm of c0] (h0) {H(C0)};
+\node[hash, above=0.5cm of c1] (h1) {H(C1)};
+\node[hash, above=0.5cm of c2] (h2) {H(C2)};
+\node[hash, above=0.5cm of c3] (h3) {H(C3)};
+\node[hash, above=0.5cm of c4] (h4) {H(C4)};
+\node[hash, above=0.5cm of c5] (h5) {H(C5)};
+\node[hash, above=0.5cm of c6] (h6) {H(C6)};
+\node[hash, above=0.5cm of c7] (h7) {H(C7)};
+
+% Level 1
+\node[hash, fill=orange!15, above=0.5cm of $(h0)!0.5!(h1)$] (n01) {H(01)};
+\node[hash, fill=orange!15, above=0.5cm of $(h2)!0.5!(h3)$] (n23) {H(23)};
+\node[hash, fill=orange!15, above=0.5cm of $(h4)!0.5!(h5)$] (n45) {H(45)};
+\node[hash, fill=orange!15, above=0.5cm of $(h6)!0.5!(h7)$] (n67) {H(67)};
+
+% Level 2
+\node[hash, fill=yellow!20, above=0.5cm of $(n01)!0.5!(n23)$] (n03) {H(0--3)};
+\node[hash, fill=yellow!20, above=0.5cm of $(n45)!0.5!(n67)$] (n47) {H(4--7)};
+
+% Root
+\node[hash, fill=red!15, above=0.5cm of $(n03)!0.5!(n47)$] (root) {Root};
+
+% Edges
+\foreach \c/\h in {c0/h0, c1/h1, c2/h2, c3/h3, c4/h4, c5/h5, c6/h6, c7/h7}
+  \draw[arr, gray] (\c) -- (\h);
+\draw[arr] (h0) -- (n01); \draw[arr] (h1) -- (n01);
+\draw[arr] (h2) -- (n23); \draw[arr] (h3) -- (n23);
+\draw[arr] (h4) -- (n45); \draw[arr] (h5) -- (n45);
+\draw[arr] (h6) -- (n67); \draw[arr] (h7) -- (n67);
+\draw[arr] (n01) -- (n03); \draw[arr] (n23) -- (n03);
+\draw[arr] (n45) -- (n47); \draw[arr] (n67) -- (n47);
+\draw[arr] (n03) -- (root); \draw[arr] (n47) -- (root);
+
+% Proof path highlight
+\draw[very thick, red, dashed, rounded corners]
+  (h2.north west) +(-0.1,0.1) rectangle (h2.south east |- c2.south);
+\draw[very thick, red, dashed]
+  (h3.north west) +(-0.05,0.05) rectangle (h3.south east);
+\draw[very thick, red, dashed]
+  (n01.north west) +(-0.05,0.05) rectangle (n01.south east);
+\draw[very thick, red, dashed]
+  (n47.north west) +(-0.05,0.05) rectangle (n47.south east);
+
+% Labels
+\node[level, left=0.1cm of h0] {Leaf hashes};
+\node[level, left=0.1cm of n01] {Level 1};
+\node[level, left=0.1cm of n03] {Level 2};
+\node[level, left=0.1cm of root] {Root};
+
+% Annotation
+\node[below=0.3cm of c3, font=\scriptsize, text=red] {%
+  Verification path for Chunk~2: \{H(C3), H(01), H(4--7)\}};
+
+\end{tikzpicture}
+\caption{Merkle tree over an 8-chunk dataset. Red dashed boxes show the
+$O(\log N)$ sibling hashes needed to verify Chunk~2 without reading any other
+chunk data.}
+\label{fig:merkle}
+\end{figure}
+
+\subsection{Hash Algorithm Selection}
+
+We propose evaluating two hash functions:
+
+\begin{itemize}[nosep]
+  \item \textbf{SHA-256}: Widely used, FIPS-approved, hardware-accelerated via
+    SHA-NI (x86) and SHA extensions (ARM). HMAC-SHA-256 is already identified
+    in the S2-D2 proposal for streaming signatures.
+  \item \textbf{BLAKE3}~\cite{blake3}: Designed for parallelism---the internal
+    tree structure of BLAKE3 maps naturally to a Merkle tree, and it achieves
+    $\sim$4$\times$ higher throughput than SHA-256 on modern CPUs without
+    hardware acceleration. BLAKE3's built-in tree hashing mode could eliminate
+    the need for an external Merkle structure for the per-dataset case.
+\end{itemize}
+
+\noindent The research will benchmark both on representative scientific data to
+determine the performance--compliance tradeoff (SHA-256 for FIPS environments,
+BLAKE3 for maximum throughput).
+
+\subsection{Storage of the Merkle Tree}
+\label{sec:merkle-storage}
+
+A dataset with $N$ chunks produces a Merkle tree with $\sim 2N$ nodes. Each
+node is a 32-byte hash (SHA-256 or BLAKE3). Table~\ref{tab:overhead} shows
+storage overhead for representative dataset sizes.
+
+\begin{table}[ht]
+\centering
+\caption{Merkle tree storage overhead for 32-byte (SHA-256) node hashes.}
+\label{tab:overhead}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+Dataset Size & Chunk Size & Chunks ($N$) & Tree Size ($\sim 2N \times 32$\,B) & Overhead \\
+\midrule
+1\,MB   & 64\,KB  & 16       & 1\,KB     & 0.1\%   \\
+1\,GB   & 1\,MB   & 1,024    & 64\,KB    & 0.006\% \\
+1\,TB   & 1\,MB   & 1,048,576 & 64\,MB   & 0.006\% \\
+1\,TB   & 4\,MB   & 262,144  & 16\,MB    & 0.0015\% \\
+1\,PB   & 16\,MB  & 67,108,864 & 4\,GB   & 0.0004\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Note that HDF5 uses fixed-size chunks for each dataset---all chunks
+have the same dimensions, so the Merkle tree has uniform leaves by
+construction. The overhead calculations above are therefore exact (not
+estimates) for any given chunk size and dataset size. Across different datasets
+within the same file, chunk sizes may vary, but each dataset's Merkle tree is
+independent.
+
+\paragraph{Sparse datasets.}
+HDF5 supports sparse datasets where unwritten chunks are not allocated on disk
+(common in simulations where large grid regions are empty). A na\"{\i}ve Merkle
+tree over a dataset with $10^9$ logical chunks but only $10^4$ allocated would
+waste massive companion storage on empty subtrees. We adopt a \textbf{Sparse
+Merkle Tree} (SMT) architecture~\cite{laurendeau2008smt,trillian}: unallocated
+chunks receive a well-known constant leaf hash $H(\texttt{null})$. Because
+$H(H(\texttt{null}) \,\|\, H(\texttt{null}))$ is also a deterministic constant,
+entire empty subtrees collapse to precomputed values without writing them to the
+companion dataset. The companion dataset stores only nodes on paths to allocated
+chunks, preserving $O(\log N)$ proof generation while the physical storage
+scales with the number of \emph{allocated} chunks, not the logical chunk space.
+This is analogous to the approach used by Google
+Trillian~\cite{trillian} and CONIKS for sparse verifiable maps.
+
+\noindent An important constraint shapes the storage design: HDF5 attributes
+reside in the dataset's object header and are loaded whenever the dataset is
+opened, whether the reader needs the attribute or not. For a dataset with one
+million 1\,MB chunks, the 64\,MB Merkle tree would bloat the object header
+unacceptably. Compact dataset storage has the same problem---it places data
+inside the object header and is designed for payloads under $\sim$64\,KB.
+Furthermore, storing the tree as an attribute precludes hyperslab access to
+individual tree nodes, defeating the $O(\log N)$ partial-verification promise.
+
+We therefore propose a \textbf{hybrid approach} as the recommended storage
+design:
+
+\begin{enumerate}[nosep]
+  \item A small \textbf{HDF5 attribute} (\texttt{\_merkle\_root}) on the
+    dataset containing: the root hash (32\,bytes), the hash algorithm
+    identifier (e.g., \texttt{sha256} or \texttt{blake3}), the path to the
+    companion dataset, and a \textbf{companion integrity hash}---a hash of
+    the serialized companion dataset that anchors the full tree's integrity
+    to the signed root. This attribute is lightweight enough to impose
+    negligible object header overhead and enables \emph{instant root
+    verification}: a reader rehashes the data chunks, recomputes the root, and
+    compares---without loading the full tree. The companion integrity hash
+    closes a potential attack vector where an adversary modifies internal tree
+    nodes in the companion dataset without altering the root, which could
+    cause partial verification to accept tampered chunks
+    (see~\S\ref{sec:threat}, threat~T1).
+  \item A \textbf{chunked companion dataset} (e.g.,
+    \texttt{/\_merkle/temperatures}) storing the complete tree as a 1D byte
+    array with its own chunked layout (e.g., 4\,KB chunks for fine-grained
+    access to 32-byte nodes). This provides:
+    \begin{itemize}[nosep]
+      \item Hyperslab access to individual proof-path nodes ($O(\log N)$
+        positions) without loading the entire tree---critical for partial
+        verification performance.
+      \item No object header bloat on the parent dataset.
+      \item Independent chunk tuning for the tree's I/O pattern.
+      \item Natural extensibility: appending chunks to the data dataset appends
+        corresponding nodes to the companion dataset, using the same
+        incremental I/O pattern.
+    \end{itemize}
+\end{enumerate}
+
+\noindent For \textbf{small datasets} (under 256 chunks / $\sim$16\,KB of tree),
+the full tree may be stored directly in the attribute, avoiding the overhead of
+a companion dataset. The implementation will select the appropriate strategy
+automatically based on chunk count.
+
+\paragraph{Portability consideration.}
+The companion dataset approach has one disadvantage: a reader unaware of the
+Merkle convention will see an extra dataset and ignore it, and a na\"{\i}ve
+file copy that omits the \texttt{\_merkle} group breaks verification. The root
+hash attribute mitigates this---it travels with the dataset and still enables
+root-level integrity checking even if the companion is lost. The design
+document (\S\ref{sec:impl}, Phase~2) will specify conventions for tools to
+preserve companion datasets during copy and subset operations.
+
+\paragraph{Crash consistency.}
+The hybrid storage layout introduces a write-ordering requirement: if the
+application crashes after writing an encrypted chunk but before updating the
+companion Merkle dataset, the tree becomes inconsistent with the data. The
+required write-ordering protocol is:
+\begin{enumerate}[nosep]
+  \item Write the chunk data to disk (via the filter pipeline).
+  \item Write the updated Merkle tree nodes to the companion dataset
+    (leaf hash, then recomputed path to root).
+  \item Update the root attribute (root hash, companion integrity hash,
+    and dataset version number).
+\end{enumerate}
+\noindent Steps 2 and~3 must be flushed before the write is considered
+committed. On recovery after a crash, the system detects the inconsistency
+(the root attribute will not match the companion dataset state). The recovery
+behavior depends on the signing context:
+
+\begin{itemize}[nosep]
+  \item \textbf{Unsigned datasets}: The tree may be rebuilt by rehashing the
+    on-disk chunk data, since no authenticity guarantee was in force.
+  \item \textbf{Signed datasets}: The system must \textbf{fail closed}---report
+    the inconsistency and refuse to auto-rebuild. Automatically rebuilding a
+    signed Merkle tree from unauthenticated on-disk data would ``launder'' any
+    attacker modifications: if the runtime holds the Ed25519 private key (or
+    has auto-signing enabled), it would compute and sign a new root over
+    potentially tampered chunks, institutionalizing the corruption. Instead,
+    the system flags the affected chunks as unverified and requires explicit
+    operator intervention (re-signing from a trusted source or restoring from
+    a known-good backup).
+\end{itemize}
+
+\noindent The C~HDF5 design document (\S\ref{sec:impl}, Phase~2) will specify
+this protocol in detail, including interaction with HDF5's existing metadata
+journaling and flush semantics, and whether a cryptographic write-ahead log
+can provide stronger crash recovery guarantees for signed datasets without the
+blind-signing risk.
+
+\subsection{Filter Pipeline Interaction}
+\label{sec:filter-order}
+
+The position of hash computation in the filter pipeline has security
+implications. We propose the following ordering as the default:
+
+\begin{center}
+\texttt{Application data}
+$\xrightarrow{\text{shuffle}}$
+$\xrightarrow{\text{compress}}$
+$\xrightarrow{\text{encrypt}}$
+$\xrightarrow{\textbf{hash (Merkle leaf)}}$
+\texttt{Storage}
+\end{center}
+
+\noindent This is an \emph{Encrypt-then-MAC} (EtM) construction, which is the
+standard cryptographic best practice for authenticated encryption and offers
+two important properties:
+
+\begin{itemize}[nosep]
+  \item \textbf{Third-party integrity verification without decryption.}
+    Because the Merkle leaf hashes cover the ciphertext, any party---a storage
+    node, middleware, archival system, or researcher without the decryption
+    key---can verify that stored chunks have not been modified. This is
+    critical for data custody workflows where the verifier is not the data
+    owner.
+  \item \textbf{Early rejection of tampered ciphertext.}
+    A reader encountering modified ciphertext can detect the tampering
+    \emph{before} spending CPU cycles on decryption. Under a
+    Hash-then-Encrypt ordering, the reader must decrypt the (potentially
+    attacker-controlled) ciphertext before discovering via the hash that the
+    plaintext is invalid---wasting cycles and expanding the attack surface.
+\end{itemize}
+
+\paragraph{Trade-off: plaintext provenance.}
+EtM hashes the ciphertext, not the plaintext. This means that rotating the
+encryption key (re-encrypting the same data with a new key) changes the
+ciphertext and invalidates the Merkle tree, requiring a full tree
+recomputation. If plaintext-stable provenance is strictly required (e.g., to
+allow key rotation without rebuilding the tree, or to prove that two
+differently-encrypted copies contain the same data), a secondary plaintext hash
+can be stored alongside the primary ciphertext-based tree. The implementation
+will support both orderings, with EtM as the default and
+Hash-then-Encrypt available via an explicit configuration flag, along with a
+clear warning that the HtE mode sacrifices early tamper rejection and
+third-party verifiability.
+
+This ordering will be validated experimentally by measuring verification
+correctness and performance for both permutations.
+
+\subsection{Nonce Derivation for Stream Ciphers}
+\label{sec:nonce}
+
+Both AES-256-CTR and ChaCha20 are stream ciphers that generate a pseudorandom
+keystream XORed with the plaintext. If a chunk is updated in place using the
+same symmetric key and the same nonce/IV, the keystream is reused: an attacker
+who observes both the old ciphertext $C_\text{old} = P_\text{old} \oplus KS$
+and the new ciphertext $C_\text{new} = P_\text{new} \oplus KS$ can compute
+$C_\text{old} \oplus C_\text{new} = P_\text{old} \oplus P_\text{new}$,
+destroying confidentiality. This is a \textbf{catastrophic vulnerability} if
+the nonce is derived statically from the chunk index alone.
+
+To safely support in-place updates, we derive the nonce as:
+\begin{equation}
+  \text{Nonce}(k, v) = \text{KDF}(\text{dataset\_key}, \; k \,\|\, v)
+  \label{eq:nonce}
+\end{equation}
+where $k$ is the chunk index and $v$ is a monotonically increasing
+\textbf{per-chunk version counter}. The version counter is stored in the
+companion Merkle dataset alongside the tree nodes (one 64-bit counter per
+leaf, adding 8\,bytes per chunk of overhead). Every write to chunk~$k$---whether
+an append or an in-place update---increments $v$, guaranteeing a unique nonce
+per (key, chunk, version) triple. The version counter also serves double duty
+for rollback detection (threat~T4 in~\S\ref{sec:threat}): the dataset-level
+version in the signed root is the maximum of all per-chunk versions, providing
+a monotonic timeline.
+
+An alternative is to generate a fully random nonce per write and store it
+alongside the ciphertext. This avoids the need for a persistent counter but
+increases per-chunk storage overhead and introduces a dependency on the quality
+of the random number generator. The implementation will support both schemes,
+with the version-counter approach as the default.
+
+\subsection{Signing Authority and Key Management}
+
+A Merkle tree without a signed root is vulnerable to wholesale replacement (an
+attacker replaces both data and tree; see threat~T1 in~\S\ref{sec:threat}). The
+core signing mechanism is:
+
+\begin{itemize}[nosep]
+  \item The file creator signs the root hash (and the companion integrity hash)
+    with an \textbf{Ed25519 private key}. Ed25519 is chosen for its fast
+    verification, small signature size (64~bytes), and resistance to
+    timing side-channels. The signed payload includes the dataset version
+    number and a high-resolution timestamp to defend against rollback attacks
+    (threat~T4).
+  \item The corresponding public key is distributed via one of two mechanisms:
+    (a)~embedded in a file attribute (\texttt{\_provenance\_pubkey}) for
+    self-contained verification, or (b)~distributed via a keychain, connecting
+    to Task~2's plugin keychain work.
+\end{itemize}
+
+\paragraph{Symmetric key management.}
+The asymmetric Ed25519 key provides signing (authenticity), but the encryption
+layer (AES-256-CTR, ChaCha20-Poly1305) requires symmetric Data Encryption Keys
+(DEKs). The full design of key management is a broader S2-D2 concern (spanning
+Tasks~2 and~3); for the RustyHDF5 prototype, we adopt the following baseline
+scheme: a single DEK per dataset is generated at dataset creation, wrapped
+(encrypted) with a Key Encryption Key (KEK) derived from user credentials via
+HKDF-SHA-256, and stored as an HDF5 attribute
+(\texttt{\_provenance\_wrapped\_dek}) on the dataset. The KEK is never stored
+in the file. This supports the common case where one user or group encrypts a
+dataset; multi-party access (multiple KEKs wrapping the same DEK) and external
+KMS integration are deferred to the C~HDF5 design document.
+
+\paragraph{AEAD integration.}
+When ChaCha20-Poly1305 is used, the cipher natively produces a 16-byte
+Poly1305 authentication tag per chunk. To avoid discarding this tag (which
+would waste a security property the cipher already provides), the Merkle leaf
+hash for a ChaCha20-Poly1305-encrypted chunk is computed over the
+concatenation of the ciphertext and the Poly1305 tag:
+$H_\text{leaf}(k) = H(\text{Ciphertext}_k \,\|\, \text{Tag}_k \,\|\, v_k)$,
+where $v_k$ is the per-chunk version counter (\S\ref{sec:nonce}).
+This allows the Merkle tree to authenticate both the AEAD tag and the version
+counter, forming a seamless chain of trust from the per-chunk authenticated
+encryption up through the tree to the signed root. Critically, including $v_k$
+in the leaf hash \textbf{cryptographically binds the version counter to the
+tree}: if an attacker selectively rolls back a chunk and its corresponding
+version counter in the companion dataset, the leaf hash changes, breaking the
+path to the signed root. For AES-256-CTR (which is not an AEAD cipher),
+the HMAC-SHA-256 authentication tag serves an analogous role, and the leaf
+hash is $H(\text{Ciphertext}_k \,\|\, \text{HMAC}_k \,\|\, v_k)$.
+
+\paragraph{Stretch goal: Sigstore transparency log.}
+As an extension, the signed root may be published to a
+\textbf{Sigstore transparency log}~\cite{newman2022sigstore,
+laurie2014certificate}, establishing a public, append-only audit trail of who
+signed what and when. This ties Task~3 provenance directly to Task~2's digital
+signature exploration, creating a unified trust framework across both S2-D2
+thrusts. A practical consideration: Sigstore uses short-lived certificates
+issued via OIDC/Fulcio, which means the certificate will have expired by the
+time a researcher verifies the dataset months or years later. The
+implementation must therefore store the \textbf{Rekor inclusion proof}
+(transparency log bundle) as an HDF5 attribute alongside the signature, enabling
+offline verification against the log's Merkle root without requiring the
+original certificate to still be valid. For datasets archived for decades---a
+common requirement in scientific data management---institutional domain changes
+may render OIDC identity verification ambiguous. To support
+\textbf{Long-Term Validation} (LTV), the implementation will also store a
+trusted \textbf{Timestamp Authority} (TSA) token~\cite{rfc3161} alongside the
+Rekor bundle. The TSA token mathematically proves the signature occurred before
+the certificate expired, ensuring cryptographic validity for 50+ years
+independent of the signer's institutional identity. Sigstore integration
+involves external service dependencies and is therefore scoped as a stretch goal
+for Phase~2 (\S\ref{sec:impl}).
+
+\subsection{Research Questions}
+
+\begin{enumerate}[label=\textbf{RQ\arabic*}]
+  \item What is the storage overhead of Merkle trees as a function of chunk
+    size and dataset size, and at what chunk count does the hybrid
+    companion-dataset approach outperform attribute-only storage in terms of
+    object header impact and partial verification access time?
+  \item What is the partial verification latency for realistic scientific
+    access patterns (sequential scan, strided hyperslab, random chunk access)
+    compared to full-dataset rehashing?
+  \item How does incremental tree extension perform for append-heavy workloads
+    (time-series, streaming sensor data) compared to re-signing the entire
+    dataset?
+  \item What is the throughput advantage of BLAKE3 over SHA-256 for Merkle tree
+    construction at HDF5-typical chunk sizes, and does BLAKE3's internal tree
+    hashing mode offer additional speedup for whole-dataset root computation?
+    (Note: BLAKE3's internal tree uses fixed 1\,KB leaf chunks and does not
+    expose intermediate nodes via its public API, so it cannot replace the
+    external Merkle structure for partial verification. This question is
+    therefore scoped to throughput comparison, not structural subsumption.)
+  \item Can the Merkle tree detect and localize tampering injected into
+    specific chunks of real-world scientific datasets (NOAA climate, EQSIM
+    simulation~\cite{mccallen2021eqsim})?
+\end{enumerate}
+
+
+%% ============================================================================
+\section{Experimental Plan}
+\label{sec:experiments}
+
+\subsection{Datasets}
+
+We will use publicly available scientific datasets identified in the S2-D2
+proposal:
+
+\begin{itemize}[nosep]
+  \item \textbf{NOAA Climate Data Online}: Multi-variable gridded climate data,
+    representative of regular-access time-series workloads.
+  \item \textbf{EQSIM earthquake simulation}~\cite{mccallen2021eqsim}:
+    Large-scale simulation output from Lawrence Berkeley National Laboratory,
+    representative of HPC checkpoint/restart patterns.
+  \item \textbf{Synthetic datasets}: Parameterized by chunk size (64\,KB to
+    16\,MB), chunk count ($10^2$ to $10^6$), dimensionality (1D to 3D), and
+    compression ratio, for controlled benchmarking.
+\end{itemize}
+
+\subsection{Hardware Platforms}
+
+\begin{itemize}[nosep]
+  \item \textbf{Workstation}: Modern x86-64 with AVX-512 and SHA-NI for
+    hardware-accelerated hashing.
+  \item \textbf{ARM platform}: Apple Silicon or AWS Graviton, exercising NEON
+    SIMD and ARM SHA extensions.
+\end{itemize}
+
+\subsection{Evaluation Baselines}
+
+Beyond comparing Merkle-tree partial verification ($O(\log N)$) against
+full-dataset rehashing ($O(N)$)---which is expected to favor the Merkle tree by
+construction---we include a comparison against \textbf{filesystem-level
+checksumming} (ZFS~\cite{bonwick2003zfs} or Btrfs block-level integrity). This
+baseline addresses the anticipated reviewer question: \emph{``Why do this in
+HDF5 when my ZFS filesystem already prevents silent data corruption?''} The
+answer is that filesystem checksums are stripped the moment a file is
+transferred over a network, uploaded to cloud storage, or moved to a different
+filesystem. Application-level (HDF5) Merkle trees \emph{travel with the data}
+and can be verified by any recipient regardless of the underlying storage. The
+experiments will quantify the overhead of application-level Merkle verification
+relative to ZFS checksumming for the same datasets, demonstrating that the
+portability benefit comes at acceptable cost.
+
+\subsection{Metrics}
+
+\begin{itemize}[nosep]
+  \item \textbf{Throughput}: MB/s for hash computation (SHA-256, BLAKE3) and
+    encryption (AES-256-CTR, ChaCha20-Poly1305) at varying chunk sizes.
+  \item \textbf{Partial verification latency}: Wall-clock time to verify a
+    single chunk via Merkle proof vs.\ full-dataset rehash.
+  \item \textbf{Incremental update cost}: Time to append $k$ chunks or
+    overwrite $k$ existing chunks and update the Merkle tree vs.\ re-signing
+    the entire dataset.
+  \item \textbf{Storage overhead}: Bytes consumed by Merkle tree, companion
+    dataset, version counters, and provenance metadata as a fraction of
+    dataset size.
+  \item \textbf{Tamper detection accuracy}: True positive / false positive
+    rates for injected modifications at chunk, dataset, and file levels.
+\end{itemize}
+
+\subsection{Statistical Protocol}
+
+Each benchmark configuration will be measured over a minimum of 30 trials
+preceded by 5 warmup runs (discarded). We report median and 95th-percentile
+latency, with 95\% confidence intervals computed via bootstrapping. To control
+for variance from background system activity, benchmarks will be run with CPU
+frequency scaling disabled (\texttt{performance} governor), on an isolated set
+of cores (via \texttt{taskset}), and with filesystem caches dropped between
+trials for I/O-sensitive measurements.
+
+
+%% ============================================================================
+\section{Implementation Plan}
+\label{sec:impl}
+
+\subsection{Phase 1: Merkle-Tree Provenance in RustyHDF5 (Months 1--4)}
+
+\begin{enumerate}[nosep]
+  \item \textbf{Platform evaluation (go/no-go, end of Month~1):} Verify that
+    RustyHDF5 can open, chunk-iterate, and write back a 10\,GB multi-dataset
+    test file. If this gate fails, activate the standalone-library fallback
+    (see~\S\ref{sec:risks}).
+  \item Add \texttt{MerkleTree} struct to \texttt{rustyhdf5-format}, building
+    the tree from chunk hashes during write. Evaluate SHA-256 and BLAKE3.
+  \item Implement the hybrid storage layout: root-hash attribute
+    (\texttt{\_merkle\_root}) on the dataset plus chunked companion dataset
+    (\texttt{/\_merkle/<name>}) for the full tree. Include automatic fallback
+    to attribute-only storage for small datasets ($\leq 256$ chunks).
+  \item Implement \texttt{verify\_root(dataset)} for instant root verification
+    from the attribute alone (rehash chunks, recompute root, compare).
+  \item Implement \texttt{verify\_chunk(dataset, chunk\_index)} for partial
+    verification via Merkle proof path, reading only $O(\log N)$ nodes from
+    the companion dataset via hyperslab.
+  \item Implement \texttt{verify\_dataset(dataset)} for full tree
+    verification (supersedes RustyHDF5's existing flat per-dataset hash).
+  \item Implement \texttt{extend\_merkle(dataset, new\_chunks)} for
+    incremental append and \texttt{update\_merkle(dataset, chunk\_index)} for
+    in-place overwrites, both updating the companion dataset and root
+    attribute along the affected $O(\log N)$ path.
+  \item Benchmark against RustyHDF5's existing flat SHA-256 per-dataset
+    verification on synthetic and NOAA datasets, measuring companion dataset
+    I/O overhead vs.\ attribute-only at varying chunk counts.
+\end{enumerate}
+
+\subsection{Phase 2: Signing, Experiments, and C HDF5 Design Document (Months 4--7)}
+
+\begin{enumerate}[nosep]
+  \item Add Ed25519 root signing with keychain-based public key distribution.
+    Implement the versioned+timestamped signed payload for rollback resistance.
+  \item Implement AES-256-CTR encryption and HMAC-SHA-256 authentication as
+    new RustyHDF5 filter stages, including the nonce derivation scheme
+    (KDF with per-chunk version counter) and DEK/KEK/HKDF key management.
+  \item Run tamper detection experiments on NOAA and EQSIM datasets with
+    injected single-chunk, multi-chunk, metadata attribute (e.g., units,
+    dimensionality), and version-rollback modifications. Include a baseline
+    comparison against ZFS block-level checksumming to demonstrate the
+    portability advantage of application-level Merkle verification.
+  \item Produce a \textbf{design document for C HDF5 integration} specifying:
+    Merkle tree hybrid storage format (root-hash attribute plus companion
+    dataset, with attribute-only fallback for small datasets), proposed
+    HDF5 API additions (\texttt{H5Dverify\_chunk},
+    \texttt{H5Fget\_integrity\_root}), companion dataset preservation
+    semantics for copy/subset operations, crash consistency write-ordering
+    protocol (chunk $\to$ companion $\to$ root attribute), and filter pipeline
+    ordering requirements.
+  \item Write an RFC-style document for the HDF5 community.
+\end{enumerate}
+
+\paragraph{Stretch goal:}
+\begin{enumerate}[nosep, resume]
+  \item Implement ChaCha20-Poly1305 encryption with AEAD integration
+    (Merkle leaf = $H(\text{Ciphertext}_k \| \text{Tag}_k \| v_k)$).
+  \item Integrate optional Sigstore transparency log publication for root
+    signatures, including Rekor inclusion proof storage as an HDF5 attribute
+    for offline verification, connecting to Task~2's plugin signing
+    infrastructure.
+\end{enumerate}
+
+
+%% ============================================================================
+\section{Deliverables and S2-D2 Contributions}
+\label{sec:deliverables}
+
+\begin{table}[ht]
+\centering
+\caption{Mapping of deliverables to S2-D2 tasks.}
+\label{tab:deliverables}
+\begin{tabular}{@{}p{6.5cm}ccc@{}}
+\toprule
+Deliverable & S2-D2 Task & Phase & Scope \\
+\midrule
+Merkle-tree provenance implementation in RustyHDF5
+  & Task 3 & 1 & Core \\
+Benchmark data: hash throughput, partial verification latency, storage overhead
+  & Task 3 & 1 & Core \\
+Ed25519 root signing with keychain distribution
+  & Task 3 & 2 & Core \\
+AES-256-CTR and HMAC-SHA-256 filter implementations for RustyHDF5
+  & Task 3 & 2 & Core \\
+Tamper detection experiments on scientific datasets
+  & Task 3 & 2 & Core \\
+C HDF5 integration design document and RFC
+  & Task 3 & 2 & Core \\
+ChaCha20-Poly1305 encryption with AEAD integration
+  & Task 3 & 2 & Stretch \\
+Sigstore transparency log integration
+  & Task 2, 3 & 2 & Stretch \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Contribution to S2-D2 Goals}
+
+\begin{itemize}[nosep]
+  \item \textbf{SHINES alignment}: The Merkle-tree prototype implements
+    concrete technical mechanisms within the safety/security/privacy taxonomy
+    and threat categorization (FMT, LIB, EXT, TCD) established by the HDF5
+    SHINES project~\cite{shines}, grounding the vocabulary in working code.
+  \item \textbf{Task 2 connection}: Ed25519 root signing uses the same keychain
+    infrastructure being developed for plugin digital signatures. As a stretch
+    goal, Sigstore transparency log publication would further unify the trust
+    framework across S2-D2 thrusts.
+  \item \textbf{Task 3 contribution}: The Merkle tree provides a concrete,
+    benchmarked data authentication mechanism---the ``digital signatures for
+    file object metadata'' deliverable---with hybrid storage, EtM pipeline
+    ordering, version-counter nonce derivation, and crash consistency protocol.
+  \item \textbf{Design transfer}: The Rust prototype's architecture serves as a
+    reference implementation and test vector generator for the C~HDF5
+    integration, even though the production C code will not use Rust directly.
+    The design document bridges prototype to production.
+\end{itemize}
+
+
+%% ============================================================================
+\section{Potential Venues}
+\label{sec:venues}
+
+\begin{itemize}[nosep]
+  \item \textbf{PDSW} (Parallel Data Systems Workshop at SC): Natural fit for
+    the provenance and data integrity work in an HPC data context.
+  \item \textbf{IPDPS / CCGrid}: Aligned with prior S2-D2 team publications.
+  \item \textbf{HDF5 User Group (HUG)}: For the community RFC and design
+    document presentation.
+\end{itemize}
+
+%% ============================================================================
+\section{Risks and Mitigations}
+\label{sec:risks}
+
+\begin{description}[nosep]
+  \item[RustyHDF5 maturity.] RustyHDF5 is a relatively new project (2~stars,
+    1~commit on GitHub as of early 2026). If the implementation has gaps that
+    block experimentation, we fall back to implementing the Merkle tree as a
+    standalone Rust library that operates on HDF5 files via
+    \texttt{rustyhdf5-format}'s low-level parser, bypassing the high-level
+    API. To avoid sinking effort into an unusable platform, we establish a
+    \textbf{go/no-go decision point at the end of Month~1}: RustyHDF5 must
+    successfully open, iterate over all chunks of, and write back a 10\,GB
+    multi-dataset HDF5 test file without errors. If this gate is not met,
+    the standalone-library fallback is activated immediately.
+  \item[Companion dataset portability.] A reader unaware of the Merkle
+    convention will see an extra dataset and ignore it, and a na\"{\i}ve file
+    copy that omits the \texttt{\_merkle} group breaks verification. The root
+    hash attribute mitigates this (graceful degradation to root-level checking),
+    and the design document will specify copy-preservation conventions.
+  \item[Scope.] The proposal covers a substantial amount of design and
+    implementation: hybrid storage, EtM pipeline, nonce derivation, key
+    management, crash consistency, signing, and tamper experiments. Phase~2
+    includes explicit \textbf{stretch goals} (ChaCha20-Poly1305 and Sigstore)
+    that can be deferred without affecting the core contribution. The Merkle
+    tree provenance (\S\ref{sec:merkle}) and the design document are the
+    highest-priority deliverables.
+\end{description}
+
+%% ============================================================================
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
