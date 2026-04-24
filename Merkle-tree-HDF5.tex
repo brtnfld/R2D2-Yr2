@@ -14,6 +14,15 @@
 \usepackage{fancyhdr}
 \usepackage{filecontents}
 \setlength{\emergencystretch}{3em}
+\newcommand{\mapsec}[3]{%
+  \smallskip\noindent
+  \begin{tabular}{@{}p{3.2cm}p{9.8cm}@{}}
+  \toprule
+  \textbf{Tasks / sources}    & #1 \\
+  \textbf{Research questions} & #2 \\
+  \textbf{Threats addressed}  & #3 \\
+  \bottomrule
+  \end{tabular}\smallskip}
 
 \begin{filecontents}{references.bib}
 @article{tang2022async,
@@ -1794,6 +1803,324 @@ PROV~\cite{w3cprov} provenance-graph integration
     during the study are documented as findings rather than chased to
     closure within this work.
 \end{description}
+
+%% ============================================================================
+\newpage
+\section*{\textcolor{blue!60!black}{Research Plan to Paper Mapping}}
+\addcontentsline{toc}{section}{Research Plan to Paper Mapping}
+\label{sec:mapping}
+
+\begin{center}
+\textit{7-month research plan $\rightarrow$ 9-section paper ($\sim$13 pages) \quad
+$\star$ = primary research contribution}
+\end{center}
+
+%% ----------------------------------------------------------------------------
+\subsection*{\textcolor{blue!60!black}{Key structural principles}}
+
+\textbf{Single research direction, three named contributions.}
+The paper makes one argument:
+HDF5 lacks sub-dataset integrity verification
+$\rightarrow$ Merkle trees are the right primitive
+$\rightarrow$ here is a design that handles the HDF5-specific problems
+$\rightarrow$ here is the evidence.
+Three publication-shaped contributions sit inside that argument:
+$\star$~verifiable subset extraction (RQ6),
+$\star$~post-quantum hybrid signing at HDF5 scale (RQ7), and
+$\star$~a directed adversarial red-team study (RQ8).
+No two-direction framing.
+
+\textbf{Results organized by research question.}
+Eight RQs (RQ1--RQ8), each a \S7 subsection with question $\rightarrow$ data $\rightarrow$
+interpretation. RQ1--RQ5 cover the systems contribution; RQ6--RQ8 cover the three
+primary contributions. Deeper treatment per RQ than in a single-sweep results section.
+
+\textbf{Security analysis as a first-class section.}
+The game-based INT-CTXT argument and adversarial red-team study are collected in
+\S5 (Security Analysis), separate from the design (\S4). This keeps \S4 readable and
+gives security-venue reviewers what they look for.
+
+\textbf{STS is future work, not a companion result.}
+The Security Task Scheduler is mentioned in \S8 (Discussion) as an explicit future
+direction. Cleaner than trying to contribute to both Task~3 and Task~4 in one paper.
+
+\textbf{Target venue.} CCGrid/IPDPS (12~pp) is the primary target at current scope.
+PDSW (10~pp) is achievable by compressing PQ signing and verifiable subset to one
+paragraph each and dropping the cloud evaluation. USENIX Security / ACSAC if the
+Tamarin model is completed.
+
+\textbf{Writing timeline.} Draft \S1--\S4 after G2 (Month~4). Draft \S5--\S7 in
+Months~5--6. Write \S8--\S9 and revise \S1 in Month~7. Submittable draft by Month~7.
+
+%% ----------------------------------------------------------------------------
+\bigskip
+\subsection*{\textcolor{blue!60!black}{Section-by-section mapping}}
+
+%% §1
+\noindent\textcolor{blue!60!black}{\textbf{\S1\quad Introduction \hfill($\sim$1\,pp)}}
+\par\noindent\rule{\linewidth}{0.4pt}
+\mapsec{Proposal \S1}{---}{---}
+
+\noindent\textbf{Content:} Single-gap framing: no sub-dataset integrity verification in
+HDF5. Cites Peisert~2021. States three contributions up front. RustyHDF5 rationale:
+modular crate architecture, Rust memory safety for crypto, existing filter pipeline.
+
+\noindent\textbf{Writing strategy:} One clear thesis; no two-direction framing. Abstract
+to 150~words. Draft early; revise after results to match headline numbers.
+
+\bigskip
+%% §2
+\noindent\textcolor{blue!60!black}{\textbf{\S2\quad Background \& Related Work \hfill($\sim$1.5\,pp)}}
+\par\noindent\rule{\linewidth}{0.4pt}
+\mapsec{Proposal \S2}{---}{---}
+
+\noindent\textbf{Content:} HDF5 chunked storage, filter pipeline, RustyHDF5
+architecture. Related work: Merkle trees in storage (ZFS, Git, IPFS, Certificate
+Transparency), scientific format integrity (NetCDF, Zarr, ASDF), authenticated data
+structures (Tamassia), provenance (W3C PROV), PQ signatures (FIPS~204/205). Brief note
+on Tang et al.\ async I/O as future STS context.
+
+\noindent\textbf{Writing strategy:} Sharpen differentiation --- what does this do that
+ZFS/IPFS/Git/Zarr-v3 don't? Answer: chunk-aligned trees with HDF5 hyperslab-aware
+partial verification, verifiable subset extraction, and PQ-ready signed roots. Target
+20$+$ references.
+
+\bigskip
+%% §3
+\noindent\textcolor{blue!60!black}{\textbf{\S3\quad Threat Model \hfill($\sim$0.75\,pp)}}
+\par\noindent\rule{\linewidth}{0.4pt}
+\mapsec{Proposal \S\ref{sec:threat}}{---}{T1 (storage tampering), T2 (silent corruption),
+  T3 (provenance forgery), T4 (rollback), T5 (harvest-now/forge-later)}
+
+\noindent\textbf{Content:} Five threat categories from SHINES taxonomy. T5 extends the
+taxonomy for post-quantum archival risk. Adversary capabilities defined. Mechanism-to-threat
+mapping table. Companion integrity hash closes the partial-verification attack vector.
+
+\noindent\textbf{Writing strategy:} Keep tight. The table mapping mechanism $\rightarrow$
+threat is the money figure. Do NOT merge into \S4.
+
+\bigskip
+%% §4
+\noindent\textcolor{blue!60!black}{\textbf{\S4\quad Merkle-Tree Design \hfill($\sim$4\,pp)}}
+\par\noindent\rule{\linewidth}{0.4pt}
+\mapsec{Proposal tasks 1.1--1.7, 2.1, 2.2, 2.4, 2.5 (Phases~1--2)}{RQ1, RQ2, RQ3,
+  RQ4, RQ6, RQ7}{T1, T2, T3, T4, T5}
+
+\noindent\textbf{Content:}
+(4.1)~Hybrid storage --- root attribute + companion dataset, 256-chunk crossover.
+(4.2)~Domain separation + EtM pipeline ordering.
+(4.3)~$\star$~Verifiable subset extraction --- \texttt{extract\_subset}/\texttt{verify\_subset}
+protocol, proof $\pi$ components, soundness sketch, proof-size scaling.
+(4.4)~Nonce derivation --- KDF with per-chunk version counter.
+(4.5)~$\star$~Post-quantum hybrid signing --- Ed25519\,$+$\,ML-DSA-65, one signature per
+file-level root, key-size and attribute-encoding implications.
+(4.6)~AEAD integration for ChaCha20-Poly1305.
+(4.7)~Crash consistency --- write ordering, fail-closed for signed datasets.
+(4.8)~Key management --- DEK/KEK/HKDF baseline.
+
+\noindent\textbf{Writing strategy:} Core contribution; takes most space. Lead with design
+figure, then storage layout, then security properties. 3~figures, 2~tables.
+Verifiable subset and PQ hybrid are the novel subsections reviewers will read first.
+
+\bigskip
+%% §5
+\noindent\textcolor{blue!60!black}{\textbf{\S5\quad Security Analysis \hfill($\sim$1\,pp)}}
+\par\noindent\rule{\linewidth}{0.4pt}
+\mapsec{Proposal tasks 2.3, 2.4 (Phase~2); Tamarin model (Phase~3 stretch)}{RQ8}{T1--T5}
+
+\noindent\textbf{Content:}
+(5.1)~Game-based INT-CTXT argument (Bellare--Namprempre framework):
+EtM\,$+$\,version-counter\,$+$\,hybrid signed root reduces to second-preimage
+resistance, EUF-CMA of the hybrid scheme, and IND-CPA of the AEAD.
+(5.2)~$\star$~Adversarial red-team study: white-box attack suite covering T1--T5 plus
+three subset-extraction attack classes; detection matrix; root-cause analysis of any
+successful attacks.
+Stretch: Tamarin depth-bounded symbolic model with machine-checked lemmas.
+
+\noindent\textbf{Writing strategy:} Without the game-based argument this section risks
+rejection at security venues. Even for systems venues (CCGrid/PDSW), the argument
+upgrades the paper from ``engineering report'' to ``security systems paper.''
+
+\bigskip
+%% §6
+\noindent\textcolor{blue!60!black}{\textbf{\S6\quad Experimental Setup \hfill($\sim$1\,pp)}}
+\par\noindent\rule{\linewidth}{0.4pt}
+\mapsec{Proposal tasks 1.8, 2.5, 2.6 (Phases~1--2)}{---}{---}
+
+\noindent\textbf{Content:} Datasets: NOAA, EQSIM, synthetic (parameterized by chunk
+size, count, dimensionality, compression ratio). Platforms: x86-64 (SHA-NI, AVX-512)
+and ARM (NEON, SHA extensions). Cloud: S3-compatible store for WAN measurements.
+Statistical protocol: 30 trials, bootstrapped 95\% CIs, CPU isolation (\texttt{taskset},
+\texttt{performance} governor). Metrics: hash throughput, partial-verification latency,
+subset-proof size/latency, PQ signing cost, WAN bandwidth, incremental update cost,
+storage overhead, adversarial-evasion rate.
+
+\noindent\textbf{Writing strategy:} Factual and reproducible. Publish all benchmark
+scripts and tamper-injection harness as companion artifact.
+
+\bigskip
+%% §7
+\noindent\textcolor{blue!60!black}{\textbf{\S7\quad Results \hfill($\sim$3.5\,pp)}}
+\par\noindent\rule{\linewidth}{0.4pt}
+\mapsec{Proposal tasks 1.7, 1.8, 2.4, 2.5, 2.6}{RQ1--RQ8}{---}
+
+\noindent\textbf{Content:}
+\S7.1~Storage overhead + hybrid vs.\ attribute-only crossover (RQ1).
+\S7.2~Partial-verification latency by access pattern vs.\ full rehash (RQ2).
+\S7.3~Incremental extension + in-place update cost vs.\ full rebuild (RQ3).
+\S7.4~Hash throughput: SHA-256 / BLAKE3 / KangarooTwelve on x86 and ARM (RQ4).
+\S7.5~Tamper detection TP/FP on NOAA + EQSIM (RQ5).
+\S7.6~$\star$~Subset-proof size and latency vs.\ hyperslab shape; WAN bandwidth savings
+over S3 range-GET vs.\ full re-download (RQ6).
+\S7.7~$\star$~PQ hybrid signing cost: key size, signature size, sign/verify time, object-header
+impact at $10^4$--$10^5$ datasets per file; batch-verification throughput (RQ7).
+\S7.8~$\star$~Adversarial red-team evasion matrix: attacks detected vs.\ undetected per
+threat class; localization granularity for detected attacks (RQ8).
+
+\noindent\textbf{Writing strategy:} 8 subsections, each question $\rightarrow$ data
+$\rightarrow$ interpretation. RQ5, RQ6, RQ8 are the highlights. If tight on space,
+BLAKE3/KangarooTwelve comparison (RQ4) compresses to one paragraph.
+Expect 5--6 figures/tables.
+
+\bigskip
+%% §8
+\noindent\textcolor{blue!60!black}{\textbf{\S8\quad Discussion \hfill($\sim$1\,pp)}}
+\par\noindent\rule{\linewidth}{0.4pt}
+\mapsec{Proposal task 2.6 (design document)}{---}{---}
+
+\noindent\textbf{Content:} Design implications for C~HDF5: filter pipeline ordering
+enforcement, companion dataset preservation semantics, fail-closed crash recovery
+integration with metadata journaling. Cloud deployment (HSDS, ros3~VFD). Limitations:
+single-platform scope, RustyHDF5-specific behaviors. Future work: C~HDF5 integration,
+STS integration (explicitly future), append-only log mode, Tamarin model, multi-party
+key management / KMS.
+
+\noindent\textbf{Writing strategy:} STS positioned as future work; discussion focuses
+on Merkle tree $\rightarrow$ C~HDF5 production transfer. Design document (task 2.6) is
+the bridge artifact.
+
+\bigskip
+%% §9
+\noindent\textcolor{blue!60!black}{\textbf{\S9\quad Conclusion \hfill($\sim$0.5\,pp)}}
+\par\noindent\rule{\linewidth}{0.4pt}
+\mapsec{---}{---}{---}
+
+\noindent\textbf{Content:} Three contributions: verifiable subset extraction, PQ hybrid
+signing at HDF5 scale, adversarial soundness study. Headline numbers: partial-verification
+speedup, subset-proof bandwidth savings, PQ signing overhead, adversarial-evasion rate.
+Design transfer via companion C~HDF5 document. SHINES alignment.
+
+\noindent\textbf{Writing strategy:} Short. One clear takeaway. Read \S1\,$+$\,\S9 and
+get the full story.
+
+%% ----------------------------------------------------------------------------
+\bigskip
+\subsection*{\textcolor{blue!60!black}{Evidence flow: tasks $\rightarrow$ paper sections}}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+\textbf{Task} & \textbf{Description} &
+  \textbf{\S4} & \textbf{\S5} & \textbf{\S7} & \textbf{\S8} \\
+  & & Design & Security & Results & Discuss \\
+\midrule
+1.1  & MerkleTree struct + hash eval (SHA-256, BLAKE3, K12) & \checkmark & & \checkmark~(RQ4) & \\
+1.2  & Hybrid storage layout + companion integrity hash      & \checkmark & & \checkmark~(RQ1) & \\
+1.3  & \texttt{verify\_root()}                              & \checkmark & & \checkmark~(RQ1) & \\
+1.4  & \texttt{verify\_chunk()}                             & \checkmark & & \checkmark~(RQ2) & \\
+1.5  & \texttt{verify\_dataset()}                           & \checkmark & & \checkmark~(RQ5) & \\
+1.6  & \texttt{extend\_merkle} + \texttt{update\_merkle}   & \checkmark & & \checkmark~(RQ3) & \\
+1.7\,$\star$ & Verifiable subset extraction protocol        & \checkmark & & \checkmark~(RQ6) & \\
+1.8  & Phase~1 benchmarks                                   & & & \checkmark~(RQ1--4) & \\
+\midrule
+2.1\,$\star$ & Hybrid Ed25519\,$+$\,ML-DSA-65 signing      & \checkmark & & \checkmark~(RQ7) & \\
+2.2  & ChaCha20-Poly1305 AEAD + nonce derivation            & \checkmark & & & \\
+2.3  & Game-based security argument                         & & \checkmark & & \\
+2.4\,$\star$ & Adversarial red-team study                   & & \checkmark & \checkmark~(RQ8) & \\
+2.5  & Cloud / WAN evaluation                               & & & \checkmark~(RQ6) & \\
+2.6  & C~HDF5 design document + RFC                         & & & & \checkmark \\
+\midrule
+2.7* & Append-only log mode                                 & \checkmark & & & \checkmark \\
+2.8* & Tamarin symbolic model                               & & \checkmark & & \\
+2.9* & Sigstore + Rekor                                     & \checkmark & & & \\
+\bottomrule
+\multicolumn{6}{@{}l@{}}{\footnotesize $\star$ = primary research contribution.\quad
+* = Phase~3 stretch goal.}
+\end{tabular}
+\end{table}
+
+%% ----------------------------------------------------------------------------
+\subsection*{\textcolor{blue!60!black}{Planned figures and tables}}
+
+\noindent\textbf{Figures}
+\begin{itemize}[nosep]
+  \item Figure~1: Merkle tree over 8-chunk dataset with proof-path highlight
+    (existing TikZ) --- \S4
+  \item Figure~2: Hybrid storage layout --- root attribute, companion dataset,
+    integrity hash chain --- \S4
+  \item Figure~3: Verifiable subset extraction proof $\pi$ for a strided 2-D hyperslab
+    (proof witnesses + coverage certificate) --- \S4
+  \item Figure~4: Partial-verification latency vs.\ full rehash by access pattern
+    (bar chart, RQ2) --- \S7
+  \item Figure~5: Incremental update cost vs.\ full rebuild at varying $N$
+    (line chart, RQ3) --- \S7
+  \item Figure~6: Subset-proof size vs.\ hyperslab shape; WAN bandwidth savings
+    vs.\ full re-download (RQ6) --- \S7
+\end{itemize}
+
+\noindent\textbf{Tables}
+\begin{itemize}[nosep]
+  \item Table~1: Merkle tree storage overhead for representative dataset sizes
+    (existing) --- \S4
+  \item Table~2: Threat model --- mechanism $\rightarrow$ threat mapping (T1--T5) --- \S3
+  \item Table~3: Hash throughput SHA-256 / BLAKE3 / KangarooTwelve on x86 and ARM
+    (RQ4) --- \S7
+  \item Table~4: PQ hybrid signing cost --- key size, signature size, sign/verify
+    time, object-header impact (RQ7) --- \S7
+  \item Table~5: Tamper detection TP/FP + adversarial evasion matrix on NOAA + EQSIM
+    (RQ5, RQ8) --- \S7
+\end{itemize}
+
+%% ----------------------------------------------------------------------------
+\subsection*{\textcolor{blue!60!black}{Writing timeline}}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{When} & \textbf{Sections} & \textbf{Action} \\
+\midrule
+Month~4 (after G2) & \S1--\S4 &
+  Draft introduction, background, threat model, Merkle design. \\
+  & & Stable after Phase~1 go/no-go. Circulate for feedback. \\
+Month~5--6 & \S5, \S6, \S7 &
+  Security analysis; experimental setup (after benchmark harness). \\
+  & & Write results subsection-by-subsection as RQ data arrives. \\
+Month~7 & \S8, \S9, \S1 rev &
+  Discussion + conclusion. Revise \S1 based on actual results. \\
+  & & Final consistency pass. Internal review before submission. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ----------------------------------------------------------------------------
+\subsection*{\textcolor{blue!60!black}{Venue targeting}}
+
+\begin{itemize}[nosep]
+  \item \textbf{CCGrid / IPDPS (12\,pp):} Primary target at current scope. Comfortable
+    page budget for 8 RQs. Aligned with S2-D2 team publications.
+  \item \textbf{PDSW (SC workshop, 10\,pp):} Natural fit for HPC data provenance.
+    Achievable by compressing PQ signing and verifiable subset to one paragraph each
+    and dropping the cloud / WAN evaluation. Deadline typically August for November SC.
+  \item \textbf{USENIX Security / ACSAC:} Viable if the Tamarin symbolic model
+    (Phase~3 stretch) is completed, giving machine-checked security lemmas. Requires
+    the game-based argument in \S5 as a minimum.
+  \item \textbf{HDF5 User Group (HUG):} Community RFC and design document. Not
+    peer-reviewed but critical for adoption and C~HDF5 integration buy-in.
+\end{itemize}
 
 %% ============================================================================
 
