@@ -974,12 +974,18 @@ within the same file, chunk sizes may vary, but each dataset's Merkle tree is
 independent.
 
 \paragraph{Sparse datasets.}
-HDF5 supports sparse datasets where unwritten chunks are not allocated on disk
-(common in simulations where large grid regions are empty). A na\"{\i}ve Merkle
-tree over a dataset with $10^9$ logical chunks but only $10^4$ allocated would
-waste massive companion storage on empty subtrees. We adopt a \textbf{Sparse
-Merkle Tree} (SMT) architecture~\cite{laurendeau2008smt,trillian}: unallocated
-chunks receive a well-known constant leaf hash $H(\texttt{null})$. Because
+HDF5 chunked datasets allocate storage only for chunks that have been written:
+unwritten chunks are not allocated on disk, which is common in simulations where
+large grid regions are empty. Note that HDF5 \emph{sparse dataset} support
+as a first-class API feature is currently a \textbf{prototype} and not yet in
+production; the analysis below therefore applies to the standard chunked-storage
+behaviour (unallocated chunks) that is available today, with the Sparse Merkle
+Tree construction designed to be forward-compatible with the production sparse
+dataset API once it stabilises. A na\"{\i}ve Merkle tree over a dataset with
+$10^9$ logical chunks but only $10^4$ allocated would waste massive companion
+storage on empty subtrees. We adopt a \textbf{Sparse Merkle Tree} (SMT)
+architecture~\cite{laurendeau2008smt,trillian}: unallocated chunks receive a
+well-known constant leaf hash $H(\texttt{null})$. Because
 $H(H(\texttt{null}) \,\|\, H(\texttt{null}))$ is also a deterministic constant,
 entire empty subtrees collapse to precomputed values without writing them to the
 companion dataset.
@@ -1810,6 +1816,19 @@ PROV~\cite{w3cprov} provenance-graph integration
     classes of \S\ref{sec:adversarial}; novel attack categories discovered
     during the study are documented as findings rather than chased to
     closure within this work.
+  \item[HDF5 sparse dataset API maturity.] The Sparse Merkle Tree
+    construction (\S\ref{sec:merkle-storage}) is designed to be
+    forward-compatible with the HDF5 sparse dataset API, which is currently
+    a \textbf{prototype} and not in production. For the RustyHDF5
+    prototype, the SMT construction will be exercised against the standard
+    chunked-storage behaviour (unallocated chunks), which is available
+    today in both RustyHDF5 and the C~HDF5 library. Integration with the
+    sparse dataset API proper is deferred to the C~HDF5 design document
+    (\S\ref{sec:impl}, Phase~2) and is conditional on the API reaching
+    production status within the project timeline. If it does not, the SMT
+    implementation and the associated RQ1 measurements remain valid for the
+    standard chunked-storage case; the sparse API integration is noted as
+    future work.
 \end{description}
 
 %% ============================================================================
