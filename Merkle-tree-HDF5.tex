@@ -943,8 +943,10 @@ nodes can be deduplicated during witness construction.  In the limiting
 case of a fully contiguous block, the unique witnesses are concentrated
 at the spatial \emph{boundary} of the hyperslab rather than its interior:
 proof size scales with the boundary surface area of the requested block,
-not its volume, yielding $O\bigl(\sum_i m_i \cdot \log n_i\bigr)$
-for axis-aligned hyperslabs under an ideal tree layout. For
+not its volume, yielding $O\!\left(\mathrm{SurfaceArea}(m_1,\dots,m_r)\cdot\log(\mathrm{Depth})\right)$
+rather than $O\!\left(\mathrm{Volume}\cdot\log(\mathrm{Depth})\right)$,
+for axis-aligned hyperslabs under an ideal tree layout (where
+$\mathrm{SurfaceArea}(m_1,\dots,m_r)=\sum_i \prod_{j\neq i} m_j$). For
 strided or irregular access patterns (e.g., every 10th time step),
 deduplication savings are smaller and depend on the companion dataset's
 linearization order. The optimal layout and the achievable compression
@@ -985,9 +987,11 @@ independent.
 To prevent second-preimage structural attacks (where a crafted chunk payload
 matches the 64-byte concatenation of two internal node hashes and is
 misinterpreted as an internal node), all hash inputs use \textbf{domain
-separation prefixes}: \texttt{0x00} is prepended before hashing leaf inputs
-and \texttt{0x01} before hashing internal node pairs. This makes leaf and
-internal hashes structurally incompatible at the input level, regardless of
+separation prefixes}: \texttt{0x00} is prepended before hashing leaf inputs,
+\texttt{0x01} before hashing internal node pairs, and \texttt{0x02} for
+unallocated sparse chunks (preventing a crafted payload from colliding with
+the null constant). This makes leaf, internal, and sparse-null hashes
+structurally incompatible at the input level, regardless of
 the adversary's control over chunk content.
 
 \noindent An important constraint shapes the storage design: HDF5 attributes
@@ -1228,6 +1232,10 @@ public key) stored in a single file-level attribute, not $10^5 \times
 and verifying an individual dataset at rest still requires only
 $O(\log D)$ hash reads from the companion tree (where $D$ is the
 number of datasets in the file), never a per-dataset PQ signature.
+The file-level tree nodes are stored in a dedicated companion dataset
+at the HDF5 file root (e.g., \texttt{/\_merkle\_global}), using the
+same chunked-companion layout as per-dataset trees (\S\ref{sec:merkle-storage}),
+so the global tree itself imposes no object-header overhead.
 
 \paragraph{Why this still needs to be measured at HDF5 scale.}
 ML-DSA-65 signatures are $\sim$3.3~KB and public keys are $\sim$2~KB, versus
