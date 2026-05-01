@@ -944,8 +944,8 @@ nodes can be deduplicated during witness construction.  In the limiting
 case of a fully contiguous block, the unique witnesses are concentrated
 at the spatial \emph{boundary} of the hyperslab rather than its interior:
 proof size scales with the boundary surface area of the requested block,
-not its volume, yielding $O\!\left(\mathrm{SurfaceArea}(m_1,\dots,m_r)\cdot\log(\mathrm{Depth})\right)$
-rather than $O\!\left(\mathrm{Volume}\cdot\log(\mathrm{Depth})\right)$,
+not its volume, yielding $O\!\left(\mathrm{SurfaceArea}(m_1,\dots,m_r)\cdot\log N\right)$
+rather than $O\!\left(\mathrm{Volume}\cdot\log N\right)$,
 for axis-aligned hyperslabs under an ideal tree layout (where
 $\mathrm{SurfaceArea}(m_1,\dots,m_r)=\sum_i \prod_{j\neq i} m_j$). For
 strided or irregular access patterns (e.g., every 10th time step),
