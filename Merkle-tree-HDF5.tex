@@ -1764,6 +1764,72 @@ PROV~\cite{w3cprov} provenance-graph integration
 \end{itemize}
 
 %% ============================================================================
+\section{Limitations and Future Work}
+\label{sec:limitations}
+
+The proposed architecture is designed around HDF5's \emph{chunked} storage
+layout, which provides the natural leaf granularity for the Merkle tree and is
+the dominant choice for large-scale HPC data. HDF5 also supports three
+non-chunked layouts---Contiguous, Compact, and Virtual Dataset (VDS)---each
+of which poses distinct research challenges that are out of scope for the
+present work but constitute natural and publishable extensions.
+
+\paragraph{Logical paging for contiguous datasets.}
+A contiguous dataset serializes its multi-dimensional array to a single
+sequential byte stream. A na\"{\i}ve Merkle tree over such a dataset has exactly
+one leaf, collapsing $O(\log N)$ verification to a full-file hash and making
+verifiable subset extraction impossible. A \emph{virtual chunking} layer
+addresses this without altering the on-disk format: the byte stream is divided
+into fixed-size logical pages (e.g., 1\,MB) that serve as Merkle leaves. The
+open research question is how to map an $r$-dimensional hyperslab proof onto the
+resulting 1D page grid. Because contiguous data is serialized in C-order
+(row-major), a rectangular 3D bounding box typically maps to many disconnected
+1D byte ranges, amplifying the number of pages---and therefore proof witnesses---
+that must be fetched. Finding the page size that minimizes proof size times
+read-amplification cost across realistic HPC access patterns is a
+non-trivial optimization problem.
+
+\paragraph{Compact datasets and object-header compartmentalization.}
+Compact datasets store raw data directly inside the HDF5 Object Header rather
+than the data heap (used for arrays typically $<$64\,KB). Because the present
+proposal already incorporates a hash of the serialized Object Header into the
+file-level Merkle root (\S\ref{sec:merkle-storage}), compact datasets are
+\emph{implicitly} protected: any mutation invalidates the Object Header hash
+and, transitively, the signed file-level root. The open problem is
+\emph{cascading re-signing cost}: a single-value update to a compact dataset
+changes the Object Header and triggers a full PQ hybrid re-signature of the
+entire file. Future work should investigate Object Header compartmentalization
+strategies that isolate compact-data mutations from structural metadata,
+amortizing re-signing cost to $O(\log D)$ rather than $O(1)$ full-file
+re-signatures per update.
+
+\paragraph{VFD-level block Merkle trees.}
+HDF5 abstracts all file I/O through pluggable Virtual File Drivers (VFDs).
+An alternative architecture builds the Merkle tree at the VFD layer, treating
+the entire HDF5 file as a sequence of uniform 4\,KB or 1\,MB blocks---
+analogous to ZFS or IPFS. This secures all file content (metadata B-trees,
+local heaps, contiguous data, and chunked data) without requiring HDF5-semantic
+awareness. The fundamental limitation is loss of \emph{semantic provenance}: a
+VFD-level proof answers ``blocks 400--512 are authentic'' but cannot answer
+``this temperature hyperslab is authentic.'' Future research must define a
+translation layer that maps semantic HDF5 object queries to VFD block ranges and
+constructs the corresponding Merkle proof, recovering verifiable-subset
+semantics at the block level.
+
+\paragraph{Authenticated Virtual Datasets.}
+HDF5 Virtual Datasets (VDS) are views that map hyperslabs from multiple
+independent source files into a single logical dataset; they contain no data
+of their own. Authenticating a VDS requires a \emph{Proof of Delegation}
+primitive: the VDS creator signs a manifest binding each virtual hyperslab to
+the Merkle root of its originating source file. When a consumer queries the VDS,
+the system fetches the appropriate subset proof from each source file and
+verifies (i)~the source root against the signed manifest and (ii)~the chunk
+witnesses against the source root. This transitive verification chain extends
+the integrity guarantees of the present proposal across file boundaries, and
+is directly relevant to federated scientific archives (e.g., multi-site climate
+ensembles) where data originates from many independently signed repositories.
+
+%% ============================================================================
 \section{Risks and Mitigations}
 \label{sec:risks}
 
