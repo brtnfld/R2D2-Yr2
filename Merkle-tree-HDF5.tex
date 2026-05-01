@@ -451,7 +451,7 @@ independently. Chunks pass through a \emph{filter pipeline} that applies
 transformations (shuffle, compression, checksum) before writing to storage.
 Chunked storage is the dominant layout for large scientific datasets because it
 enables partial I/O, compression, and extensibility (resizable dimensions).
-
+However, other dataset representations are discussed in Section \S\ref{sec:limitations}.
 \subsection{RustyHDF5 Architecture}
 
 RustyHDF5 is organized as 11 Rust crates in a layered architecture:
