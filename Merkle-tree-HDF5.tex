@@ -395,7 +395,8 @@ encryption and authentication mechanisms; and Task~4 constructs the S2-D2
 runtime framework, including the Security Task Scheduler, to execute security
 operations with minimal performance overhead. This proposal contributes
 primarily to Task~3, with a secondary connection to Task~2 through
-shared trust infrastructure (Ed25519 keychain and optional Sigstore signing).
+shared trust infrastructure (the KeyStore and \texttt{h5sign} signing tool
+developed under Task~2's plugin-signature work, PR~\#6198).
 
 The core gap this research addresses:
 
@@ -1186,8 +1187,9 @@ core signing mechanism is:
     (threat~T4).
   \item The corresponding public key is distributed via one of two mechanisms:
     (a)~embedded in a file attribute (\texttt{\_provenance\_pubkey}) for
-    self-contained verification, or (b)~distributed via a keychain, connecting
-    to Task~2's plugin keychain work.
+    self-contained verification, or (b)~distributed via the Task~2 KeyStore
+    (\texttt{HDF5\_PLUGIN\_KEYSTORE\_DIR} / \texttt{HDF5\_PLUGIN\_KEYSTORE}),
+    reusing the trusted-key infrastructure from PR~\#6198.
 \end{itemize}
 
 \paragraph{Post-quantum hybrid signing (T5: harvest-now, decrypt-later).}
@@ -1288,9 +1290,9 @@ hash is $H(\text{Ciphertext}_k \,\|\, \text{HMAC}_k \,\|\, v_k)$.
 As an extension, the signed root may be published to a
 \textbf{Sigstore transparency log}~\cite{newman2022sigstore,
 laurie2014certificate}, establishing a public, append-only audit trail of who
-signed what and when. This ties Task~3 provenance directly to Task~2's digital
-signature exploration, creating a unified trust framework across both S2-D2
-thrusts. A practical consideration: Sigstore uses short-lived certificates
+signed what and when. This extends Task~3 provenance with a public,
+tamper-evident audit trail and is independent of Task~2's plugin-signing
+KeyStore (which does not use Sigstore). A practical consideration: Sigstore uses short-lived certificates
 issued via OIDC/Fulcio, which means the certificate will have expired by the
 time a researcher verifies the dataset months or years later. The
 implementation must therefore store the \textbf{Rekor inclusion proof}
@@ -1706,7 +1708,7 @@ Append-only log Merkle mode with consistency proofs (Move~5)
 Tamarin symbolic model of verification protocol
   & Task 3 & 3 & Stretch \\
 Sigstore transparency-log publication with Rekor + TSA storage
-  & Task 2, 3 & 3 & Stretch \\
+  & Task 3 & 3 & Stretch \\
 AES-256-CTR + HMAC-SHA-256 filters (FIPS-required deployments)
   & Task 3 & 3 & Stretch \\
 PROV~\cite{w3cprov} provenance-graph integration
@@ -1725,12 +1727,16 @@ PROV~\cite{w3cprov} provenance-graph integration
     The post-quantum threat T5 (\S\ref{sec:threat}) extends the SHINES
     taxonomy with a long-archival risk category not yet covered by the
     current vocabulary.
-  \item \textbf{Task 2 connection}: Ed25519~$+$~ML-DSA-65 hybrid root signing
-    uses the same keychain infrastructure being developed for plugin digital
-    signatures, while introducing the post-quantum hybrid pattern that Task~2
-    will need for plugin signing on the same archival timescales. As a
-    stretch goal, Sigstore transparency-log publication would further unify
-    the trust framework across S2-D2 thrusts.
+  \item \textbf{Task 2 connection}: Task~2 has implemented RSA plugin
+    signature verification in the C HDF5 library (PR~\#6198), introducing a
+    \texttt{KeyStore} for trusted public keys, an append-style signature footer
+    on plugin binaries, a revocation blocklist, and the \texttt{h5sign}
+    command-line signing tool.  The present proposal shares this trust
+    infrastructure: dataset-root signing keys can be managed through the same
+    KeyStore mechanism, and the post-quantum hybrid pattern introduced here
+    (Ed25519~$+$~ML-DSA-65) provides a forward-compatible upgrade path for
+    plugin signing on long-archival timescales, without requiring Sigstore
+    or any external transparency service.
   \item \textbf{Task 3 contribution}: The Merkle tree provides a concrete,
     benchmarked data authentication mechanism---the ``digital signatures for
     file object metadata'' deliverable---with hybrid storage, EtM pipeline
