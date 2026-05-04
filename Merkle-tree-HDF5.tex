@@ -478,9 +478,21 @@ chunk data. An attacker who leaves array data intact but modifies an attribute
 (e.g., changing \texttt{units="Celsius"} to \texttt{units="Fahrenheit"}) or
 alters the dataspace dimensionality corrupts the scientific result while passing
 chunk-level Merkle verification. To prevent this, each dataset's contribution
-to the file-level root includes a hash of its serialized object header
-(datatype, dataspace, creation properties, and user-defined attributes). This
-is analogous to how Zarr~v3 secures metadata via its consolidated
+to the file-level root includes a hash of its object header metadata.
+Critically, this hash is computed over a \textbf{canonical serialization}
+of the semantic fields (datatype class and size, dataspace dimensionality and
+extent, chunk shape, and filter pipeline identifiers) rather than over the raw
+HDF5 disk bytes of the object header block. HDF5 object headers are
+malleable: the library routinely shifts messages, inserts padding, or migrates
+the header to a continuation block during ordinary operations such as
+\texttt{h5repack} or attribute addition. Hashing raw bytes would break the
+signature after any such benign operation. By extracting the specific fields
+into a fixed-width, big-endian binary encoding and hashing that, the signature
+survives all layout-preserving file operations while still detecting any
+semantically meaningful metadata change (e.g., rewriting
+\texttt{units="Celsius"} to \texttt{units="Fahrenheit"}). The canonical
+format is defined in the Phase~2 design document (\S\ref{sec:impl}).
+This is analogous to how Zarr~v3 secures metadata via its consolidated
 \texttt{zarr.json} manifest~\cite{zarr2024}. The object header hash is stored
 in the \texttt{\_merkle\_root} attribute alongside the data root hash, and both
 are covered by the Ed25519 signature.
@@ -762,6 +774,20 @@ the null constant). This makes leaf, internal, and sparse-null hashes
 structurally incompatible at the input level, regardless of
 the adversary's control over chunk content.
 
+\noindent\textbf{Sparsity side-channel note.}
+For unencrypted or publicly readable datasets, the deterministic null
+constant $H(\texttt{0x02}\,\|\,\texttt{null})$ is an acceptable and
+efficient sentinel. However, for \emph{encrypted} datasets where
+confidentiality of structure is required, the positions of null leaves in
+the companion Merkle tree are visible to any reader and directly reveal the
+physical sparsity pattern of the dataset---potentially leaking sensitive
+information (e.g., the shape of sparse genomic or radar data implies content).
+If structure-hiding is required, the null hash should instead incorporate a
+secret value derived from the dataset encryption key
+(e.g., $H(\texttt{0x02}\,\|\,\text{PRF}(\text{DEK},\texttt{"null"}))$),
+or the dataset must be allocated as fully dense. This trade-off is noted as
+a configuration concern in the security design document.
+
 \noindent An important constraint shapes the storage design: HDF5 attributes
 reside in the dataset's object header and are loaded whenever the dataset is
 opened, whether the reader needs the attribute or not. For a dataset with one
@@ -817,6 +843,19 @@ hash attribute mitigates this---it travels with the dataset and still enables
 root-level integrity checking even if the companion is lost. The design
 document (\S\ref{sec:impl}, Phase~2) will specify conventions for tools to
 preserve companion datasets during copy and subset operations.
+
+\noindent\textbf{Downgrade-to-plaintext threat.}
+This \emph{fail-open} default is intentional for backward compatibility but
+creates an active attack surface: a compromised storage node or
+Man-in-the-Middle can strip the \texttt{\_merkle\_root} attribute and the
+\texttt{/\_merkle\_global} companion dataset, causing an unaware reader to
+process tampered data without error. To close this gap, the S2-D2 framework's
+Data Protection Factory will enforce a \textbf{Strict Mode}: when a file is
+known to be governed by a provenance policy (via out-of-band trust metadata,
+filesystem extended attributes, or a policy registry), the \emph{absence} of
+a valid Merkle root is treated as a fatal security exception rather than a
+graceful degradation. Strict Mode is opt-in for interoperability but mandatory
+in high-assurance deployment contexts.
 
 \paragraph{Crash consistency.}
 The hybrid storage layout introduces a write-ordering requirement: if the
@@ -930,7 +969,17 @@ an append or an in-place update---increments $v$, guaranteeing a unique nonce
 per (key, chunk, version) triple. The version counter also serves double duty
 for rollback detection (threat~T4 in~\S\ref{sec:threat}): the dataset-level
 version in the signed root is the maximum of all per-chunk versions, providing
-a monotonic timeline.
+a monotonic timeline. The locally stored high-resolution timestamp~$\tau$
+in the signed payload~$R$ similarly defends against T4 by making rollback
+detectable to any verifier with a prior observation. However, it is important
+to note that \textbf{local timestamps provide no protection against key
+compromise}: an attacker who obtains the Ed25519 private key can generate a
+freshly signed payload with a backdated~$\tau$, fabricating an apparently old
+provenance record. True non-repudiation and key-compromise resilience require
+an \emph{external} cryptographic timestamp from a trusted Timestamp Authority
+(TSA, RFC~3161~\cite{rfc3161}), which is why the Sigstore~$+$~TSA token
+stretch goal (\S\ref{sec:signing}) is architecturally significant and not
+merely a deployment convenience.
 
 An alternative is to generate a fully random nonce per write and store it
 alongside the ciphertext. This avoids the need for a persistent counter but
@@ -976,11 +1025,18 @@ hybrid signature consisting of:
 \begin{equation}
   \sigma_\text{root} = \bigl(\sigma_\text{Ed25519}(R), \;
                             \sigma_\text{ML-DSA-65}(R)\bigr),
-  \quad R = \text{root} \,\|\, \text{companion\_hash} \,\|\, v_\text{dataset} \,\|\, \tau
+  \quad R = \text{root} \,\|\, \text{companion\_hash} \,\|\, v_\text{dataset} \,\|\, \tau \,\|\, \text{AlgID}
 \end{equation}
 
 \noindent where $R$ is the canonical signed payload (root, companion integrity
-hash, dataset-level version counter, and timestamp). ML-DSA-65 (NIST FIPS
+hash, dataset-level version counter, timestamp, and a compact algorithm
+identifier). Including \textbf{AlgID}---a fixed-width encoding of the hash
+function (e.g., \texttt{BLAKE3}) and AEAD cipher (e.g.,
+\texttt{ChaCha20-Poly1305}) in use---prevents \emph{Algorithm Substitution
+Attacks}: an attacker who rewrites the \texttt{\_merkle\_root} attribute to
+specify a weaker hash or cipher cannot produce a valid signature over the
+modified payload, because the algorithm identifiers are covered by both
+$\sigma_\text{Ed25519}$ and $\sigma_\text{ML-DSA-65}$. ML-DSA-65 (NIST FIPS
 204~\cite{fips204}) provides $\sim$192-bit classical and $\sim$128-bit
 post-quantum security; SLH-DSA-128s (NIST FIPS 205~\cite{fips205}) is also
 implemented as an alternative for deployments preferring hash-based
@@ -1041,17 +1097,26 @@ Poly1305 authentication tag per chunk. To avoid discarding this tag (which
 would waste a security property the cipher already provides), the Merkle leaf
 hash for a ChaCha20-Poly1305-encrypted chunk is computed over the
 concatenation of the ciphertext and the Poly1305 tag:
-$H_\text{leaf}(k) = H(\text{Ciphertext}_k \,\|\, \text{Tag}_k \,\|\, v_k)$,
-where $v_k$ is the per-chunk version counter (\S\ref{sec:nonce}).
-This allows the Merkle tree to authenticate both the AEAD tag and the version
-counter, forming a seamless chain of trust from the per-chunk authenticated
-encryption up through the tree to the signed root. Critically, including $v_k$
-in the leaf hash \textbf{cryptographically binds the version counter to the
-tree}: if an attacker selectively rolls back a chunk and its corresponding
-version counter in the companion dataset, the leaf hash changes, breaking the
-path to the signed root. For AES-256-CTR (which is not an AEAD cipher),
-the HMAC-SHA-256 authentication tag serves an analogous role, and the leaf
-hash is $H(\text{Ciphertext}_k \,\|\, \text{HMAC}_k \,\|\, v_k)$.
+\begin{equation}
+  H_\text{leaf}(k) = H(\texttt{0x00} \,\|\, k \,\|\,
+                        \text{Ciphertext}_k \,\|\, \text{Tag}_k \,\|\, v_k),
+\end{equation}
+where $v_k$ is the per-chunk version counter (\S\ref{sec:nonce}) and
+$\texttt{0x00}$ is the leaf domain-separation prefix (\S\ref{sec:merkle-storage}).
+Explicitly binding the chunk index~$k$ into the leaf hash prevents
+\emph{position-swapping attacks}: an adversary cannot substitute the
+ciphertext, tag, and version counter of chunk~$k'$ in place of chunk~$k$,
+because the index is baked into the hash; the forged leaf will not match
+the honest leaf at position~$k$ in the tree, and Merkle path verification
+will reject it. This is especially important under Sparse Merkle Trees,
+where dynamically collapsed subtrees could otherwise introduce structural
+ambiguity in proof generation. Critically, including $v_k$ in the leaf hash
+\textbf{cryptographically binds the version counter to the tree}: if an
+attacker selectively rolls back a chunk and its corresponding version counter
+in the companion dataset, the leaf hash changes, breaking the path to the
+signed root. For AES-256-CTR (which is not an AEAD cipher), the HMAC-SHA-256
+authentication tag serves an analogous role:
+$H(\texttt{0x00} \,\|\, k \,\|\, \text{Ciphertext}_k \,\|\, \text{HMAC}_k \,\|\, v_k)$.
 
 \paragraph{Stretch goal: Sigstore transparency log.}
 As an extension, the signed root may be published to a
@@ -1371,7 +1436,7 @@ preserve focus.
   \item \textbf{Hybrid signing (Move~2):} implement
     Ed25519~$+$~ML-DSA-65 signed roots over the canonical payload
     $R = \text{root} \,\|\, \text{companion\_hash} \,\|\, v_\text{dataset}
-    \,\|\, \tau$ (\S\ref{sec:pq-hybrid}), with Ed25519~$+$~SLH-DSA-128s
+    \,\|\, \tau \,\|\, \text{AlgID}$ (\S\ref{sec:pq-hybrid}), with Ed25519~$+$~SLH-DSA-128s
     available as an alternative. Measure end-to-end sign/verify cost,
     signature and public-key size, and object-header impact at
     $10^4$--$10^5$ datasets per file and $10^6$--$10^9$ chunks per dataset
