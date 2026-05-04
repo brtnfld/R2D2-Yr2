@@ -12,7 +12,8 @@
 \usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc}
 \usepackage{listings}
 \usepackage{fancyhdr}
-\usepackage{filecontents}
+\usepackage[overwrite]{filecontents}
+\usepackage{colortbl}
 \setlength{\emergencystretch}{3em}
 \newcommand{\mapsec}[3]{%
   \smallskip\noindent
@@ -556,7 +557,7 @@ Table~\ref{tab:integrity-comparison} summarizes the trade-offs.
 \centering
 \small
 \setlength{\tabcolsep}{5pt}
-\begin{tabular}{lccccc}
+\begin{tabular}{lcccc>{\columncolor{blue!12}}c}
 \toprule
 \textbf{Property}
   & \textbf{\shortstack{Flat\\hash list}}
