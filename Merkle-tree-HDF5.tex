@@ -156,10 +156,10 @@
   howpublished = {\url{https://git-scm.com/book/en/v2/Git-Internals-Git-Objects}},
   year      = {2005}
 }
-@article{tanenbaum2009authenticated,
+@inproceedings{tamassia2003authenticated,
   author    = {Tamassia, Roberto},
   title     = {Authenticated Data Structures},
-  journal   = {European Symposium on Algorithms (ESA)},
+  booktitle = {Algorithms --- ESA 2003},
   pages     = {2--5},
   year      = {2003}
 }
@@ -252,24 +252,6 @@
   number    = {6},
   pages     = {1337--1353},
   year      = {2020}
-}
-@inproceedings{laurendeau2008smt,
-  author    = {Dahlberg, Rasmus and Pulls, Tobias and Peeters, Roel},
-  title     = {Efficient Sparse {Merkle} Trees: Caching Strategies and Secure (Non-)Membership Proofs},
-  booktitle = {Cryptology ePrint Archive, Report 2016/683},
-  year      = {2016}
-}
-@misc{trillian,
-  author    = {{Google}},
-  title     = {Trillian: A Transparent, Highly Scalable and Cryptographically Verifiable Data Store},
-  howpublished = {\url{https://github.com/google/trillian}},
-  year      = {2024}
-}
-@misc{rfc3161,
-  author    = {Adams, C. and Cain, P. and Pinkas, D. and Zuccherato, R.},
-  title     = {Internet {X.509} Public Key Infrastructure Time-Stamp Protocol ({TSP})},
-  howpublished = {RFC 3161},
-  year      = {2001}
 }
 @misc{fips204,
   author    = {{NIST}},
@@ -568,9 +550,37 @@ A hash-based Merkle tree avoids all of these deficiencies: it requires no
 trusted setup, is post-quantum upgradeable by swapping the hash function,
 builds at memory-bandwidth speed, produces O($\log N$) subset proofs, and
 enables a coverage certificate with a single signed root hash.
+Table~\ref{tab:integrity-comparison} summarizes the trade-offs.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Property}
+  & \textbf{\shortstack{Flat\\hash list}}
+  & \textbf{\shortstack{Crypto\\accumulator}}
+  & \textbf{\shortstack{KZG /\\Verkle}}
+  & \textbf{\shortstack{Per-chunk\\signature}}
+  & \textbf{\shortstack{Merkle\\tree}} \\
+\midrule
+No trusted setup          & \checkmark & $\times$ & $\times$ & \checkmark & \checkmark \\
+Post-quantum ready        & \checkmark & $\times$ & $\times$ & $\dagger$  & \checkmark \\
+$O(\log N)$ subset proof  & $\times$   & $O(1)$   & $O(1)$   & $\times$   & \checkmark \\
+Coverage certificate      & $\times$   & complex  & complex  & $\times$   & \checkmark \\
+Builds at hash speed      & \checkmark & $\times$ & $\times$ & $\times$   & \checkmark \\
+HPC tooling exists        & \checkmark & $\times$ & $\times$ & \checkmark & \checkmark \\
+Single root to sign       & $\times$   & \checkmark & \checkmark & ---     & \checkmark \\
+\bottomrule
+\end{tabular}
+\caption{Comparison of dataset authentication approaches.
+  $\dagger$~Requires replacing classical scheme with ML-DSA-65.}
+\label{tab:integrity-comparison}
+\end{table}
 
 \paragraph{Authenticated data structures.}
-Tamassia~\cite{tanenbaum2009authenticated} formalized authenticated data
+Tamassia~\cite{tamassia2003authenticated} formalized authenticated data
 structures, where a trusted source publishes a digest and an untrusted
 responder proves query correctness against that digest.
 Li et al.~\cite{li2021fastore} explored authenticated storage using small
