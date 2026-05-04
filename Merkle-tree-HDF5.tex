@@ -315,6 +315,20 @@
   howpublished = {\url{https://github.com/HDFGroup/hsds}},
   year      = {2024}
 }
+@inproceedings{benaloh1993accumulator,
+  author    = {Benaloh, Josh and de Mare, Michael},
+  title     = {One-Way Accumulators: A Decentralized Alternative to Digital Signatures},
+  booktitle = {Advances in Cryptology --- EUROCRYPT 1993},
+  pages     = {274--285},
+  year      = {1993}
+}
+@inproceedings{kate2010kzg,
+  author    = {Kate, Aniket and Zaverucha, Gregory M. and Goldberg, Ian},
+  title     = {Constant-Size Commitments to Polynomials and Their Applications},
+  booktitle = {Advances in Cryptology --- ASIACRYPT 2010},
+  pages     = {177--194},
+  year      = {2010}
+}
 \end{filecontents}
 
 \lstset{
@@ -523,6 +537,37 @@ Format) includes per-block checksums but no tree-structured aggregation.
 None of these formats currently provides Merkle-tree-based partial
 verification, incremental signing, or tamper localization at sub-dataset
 granularity.
+
+\paragraph{Why not alternative integrity structures?}
+Several alternatives to Merkle trees exist for dataset authentication, each
+with a disqualifying trade-off in this setting.
+\emph{Flat hash lists} (one hash per chunk, no aggregation) are the approach
+taken by Zarr and ASDF. They enable O(1) per-chunk verification but cannot
+produce a compact subset-coverage proof: to confirm that a delivered hyperslab
+is \emph{complete}, the receiver needs all $N$ chunk hashes to recompute
+which chunks were required---an O(N) communication cost that defeats the
+purpose of partial verification at petabyte scale.
+\emph{Cryptographic accumulators}~\cite{benaloh1993accumulator} (RSA or
+bilinear-map variants) achieve O(1) witness size but require a trusted setup
+(a safe RSA modulus or a structured reference string from an MPC ceremony),
+carry no post-quantum security, and are set-based rather than ordered, making
+hyperslab coverage certificates difficult to construct without additional
+machinery.
+\emph{KZG polynomial commitments}~\cite{kate2010kzg} and Verkle trees reduce
+multiproof size to a single constant-size group element but inherit the same
+trusted-setup requirement, rely on elliptic-curve pairings that are broken by
+quantum adversaries, and require O(N) multi-scalar multiplications to build the
+commitment---computationally infeasible for petabyte-scale scientific datasets.
+\emph{Per-chunk asymmetric signatures} (Ed25519 or ML-DSA-65 on every chunk)
+eliminate the need for a tree entirely but produce $64N$--$3300N$ bytes of
+signatures ($64\,\text{GB}$--$3.3\,\text{TB}$ at $N=10^9$ chunks) and require
+commensurate signing time.
+\emph{Per-chunk symmetric MACs} are fast and compact but require a shared
+secret key, providing no public verifiability for third-party auditors.
+A hash-based Merkle tree avoids all of these deficiencies: it requires no
+trusted setup, is post-quantum upgradeable by swapping the hash function,
+builds at memory-bandwidth speed, produces O($\log N$) subset proofs, and
+enables a coverage certificate with a single signed root hash.
 
 \paragraph{Authenticated data structures.}
 Tamassia~\cite{tanenbaum2009authenticated} formalized authenticated data
