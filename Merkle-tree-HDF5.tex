@@ -325,8 +325,9 @@ scope of this proposal.
 \label{sec:threat}
 
 Before describing the Merkle tree construction, we define the adversary model
-that motivates the design. We consider three threat categories, drawn from the
-SHINES taxonomy~\cite{shines}:
+that motivates the design. We consider eight threats spanning three SHINES
+taxonomy categories~\cite{shines} (TCD, FMT, EXT) plus systems-security
+and privacy extensions (T6--T8):
 
 \begin{description}[nosep]
   \item[T1: Storage-level tampering (TCD).]
@@ -359,6 +360,30 @@ SHINES taxonomy~\cite{shines}:
     forges signatures over tampered data attributed to the original signer.
     Because scientific datasets are routinely retained for 30--100~years, this
     threat is concrete for any archive signed with classical-only signatures.
+  \item[T6: Security stripping and algorithm downgrade.]
+    An adversary deletes the provenance metadata entirely (removing the
+    \texttt{\_merkle\_root} attribute and the \texttt{/\_merkle} companion
+    dataset) to force a fail-open downgrade to unauthenticated access, or
+    alters the unencrypted algorithm identifiers in the root attribute to
+    force the verifier to use a weaker cryptographic primitive (e.g.,
+    substituting \texttt{sha1} for \texttt{blake3}).  Unlike T1--T3, no
+    signature forgery is required; the attack exploits verifier leniency
+    toward missing or downgraded metadata.
+  \item[T7: Verification resource exhaustion (DoS).]
+    An adversary crafts a malformed companion dataset, manipulated
+    chunk-grid metadata, or cyclic proof paths designed to force the
+    verifier into unbounded computation or out-of-memory states during
+    \texttt{verify\_subset}.  For example, a claimed Merkle path of
+    depth $2^{63}$, or a coverage certificate that maps a tiny hyperslab
+    to astronomically many chunks, can exhaust memory on an HPC compute
+    node before any cryptographic check occurs.
+  \item[T8: Structural metadata leakage (privacy).]
+    For encrypted datasets stored with Sparse Merkle Trees, an adversary
+    observes the companion dataset to map the physical allocation grid---the
+    positions of null leaves directly reveal which chunks are unallocated.
+    Even without decrypting a single byte, the shape of the sparse data
+    can leak sensitive structure (e.g., geographic boundaries in radar data,
+    or expressed-gene regions in a genomic sequence).
 \end{description}
 
 \noindent Each proposed mechanism maps to these threats as follows. The Merkle
@@ -378,6 +403,18 @@ hash of the serialized companion included in the signed root attribute
 (\S\ref{sec:merkle-storage}). To defend against T5, the signed root carries a
 \emph{hybrid} signature combining Ed25519 with a post-quantum scheme
 (ML-DSA-65 or SLH-DSA-128s); see \S\ref{sec:pq-hybrid}.
+To defend against T6, the S2-D2 runtime enforces a \textbf{fail-closed Strict
+Mode} for policy-governed files (\S\ref{sec:merkle-storage}), and the
+cryptographic algorithm identifiers are bound into the signed payload~$R$
+(\S\ref{sec:pq-hybrid}), making any downgrade attempt detectable as a
+signature failure. To mitigate T7, the verification protocol strictly validates
+object-header chunk-grid bounds before allocating memory for hyperslab proofs
+and enforces maximum tree depths (\S\ref{sec:security-analysis}), preventing
+adversarially crafted proofs from exhausting verifier resources. To address T8,
+confidential sparse datasets may mask unallocated subtrees by incorporating a
+secret salt derived from the Data Encryption Key into the SMT null constant
+(\S\ref{sec:merkle-storage}); alternatively, full allocation can be enforced
+to eliminate structural leakage entirely.
 
 \subsection{Why Integrity Verification Independent of Encryption?}
 \label{sec:why-integrity}
@@ -1221,7 +1258,7 @@ security venue (USENIX Security, ACSAC) for the resulting paper.
   \item \textbf{(Adversarial soundness.)}~Can a directed adversary with
     knowledge of the design and full read/write access to the storage
     medium evade detection by the verification protocol within the stated
-    threat model (T1--T5)? This is evaluated via the red-team study
+    threat model (T1--T8)? This is evaluated via the red-team study
     described in~\S\ref{sec:adversarial}.
 \end{enumerate}
 
@@ -1455,7 +1492,7 @@ preserve focus.
     stretch deliverable if the schedule permits.
   \item \textbf{Adversarial red-team study (Move~3):} execute the white-box
     attack suite of \S\ref{sec:adversarial} on NOAA and EQSIM datasets,
-    covering T1--T5 plus the subset-extraction attack classes. Report the
+    covering T1--T8 plus the subset-extraction attack classes. Report the
     detected/undetected matrix and root-cause-analyze any successful attacks.
   \item \textbf{Cloud object-store evaluation (Move~6):} implement the
     companion-dataset proof retrieval over S3 range-GETs (via the existing
@@ -1527,7 +1564,7 @@ ChaCha20-Poly1305 AEAD filter with version-counter nonce derivation and
 Game-based security argument for EtM~$+$~version-counter~$+$~hybrid-signed-root
   (Move~4)
   & Task 3 & 2 & Core \\
-$\star$~Adversarial red-team study on NOAA and EQSIM datasets (T1--T5
+$\star$~Adversarial red-team study on NOAA and EQSIM datasets (T1--T8
   $+$~subset-extraction attacks) (Move~3)
   & Task 3 & 2 & Core \\
 Cloud object-store evaluation (S3 range-GET proof retrieval, WAN
@@ -1710,7 +1747,7 @@ ensembles) where data originates from many independently signed repositories.
     construction.
   \item[Adversarial-study scope.] A white-box red-team study can in principle
     expand without bound. We bound it to the threat model of
-    \S\ref{sec:threat} (T1--T5) plus the three subset-extraction attack
+    \S\ref{sec:threat} (T1--T8) plus the three subset-extraction attack
     classes of \S\ref{sec:adversarial}; novel attack categories discovered
     during the study are documented as findings rather than chased to
     closure within this work.
@@ -1837,13 +1874,13 @@ Verifiable subset and PQ hybrid are the novel subsections reviewers will read fi
 %% §5
 \noindent\textcolor{blue!60!black}{\textbf{\S5\quad Security Analysis \hfill($\sim$1\,pp)}}
 \par\noindent\rule{\linewidth}{0.4pt}
-\mapsec{Plan: Phase~2 items P2.3--P2.4; Phase~3 item P3.2 (stretch)}{RQ8}{T1--T5}
+\mapsec{Plan: Phase~2 items P2.3--P2.4; Phase~3 item P3.2 (stretch)}{RQ8}{T1--T8}
 
 \noindent\textbf{Content:}
 (5.1)~Game-based INT-CTXT argument (Bellare--Namprempre framework):
 EtM\,$+$\,version-counter\,$+$\,hybrid signed root reduces to second-preimage
 resistance, EUF-CMA of the hybrid scheme, and IND-CPA of the AEAD.
-(5.2)~$\star$~Adversarial red-team study: white-box attack suite covering T1--T5 plus
+(5.2)~$\star$~Adversarial red-team study: white-box attack suite covering T1--T8 plus
 three subset-extraction attack classes; detection matrix; root-cause analysis of any
 successful attacks.
 Stretch: Tamarin depth-bounded symbolic model with machine-checked lemmas.
@@ -1956,7 +1993,7 @@ P2.2 & ChaCha20-Poly1305 AEAD + nonce derivation
                                                         & \checkmark & & & \\
 P2.3 & Game-based INT-CTXT security argument
                                                         & & \checkmark & & \\
-P2.4\,$\star$ & Adversarial red-team study (T1--T5 + subset attacks)
+P2.4\,$\star$ & Adversarial red-team study (T1--T8 + subset attacks)
                                                         & & \checkmark & \checkmark~(RQ8) & \\
 P2.5 & Cloud / WAN evaluation (S3 range-GETs)
                                                         & & & \checkmark~(RQ6) & \\
@@ -1997,7 +2034,7 @@ P3.5* & PROV graph integration                         & \checkmark & & & \\
 \begin{itemize}[nosep]
   \item Table~1: Merkle tree storage overhead for representative dataset sizes
     (existing) --- \S4
-  \item Table~2: Threat model --- mechanism $\rightarrow$ threat mapping (T1--T5) --- \S3
+  \item Table~2: Threat model --- mechanism $\rightarrow$ threat mapping (T1--T8) --- \S3
   \item Table~3: Hash throughput SHA-256 / BLAKE3 / KangarooTwelve on x86 and ARM
     (RQ4) --- \S7
   \item Table~4: PQ hybrid signing cost --- key size, signature size, sign/verify
