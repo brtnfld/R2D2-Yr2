@@ -264,15 +264,17 @@ formal set of requirements and selects a primitive on that basis.
 \subsection{Error-detection codes (non-adversarial integrity)}
 
 Parity bits, cyclic redundancy checks (CRC-32, CRC-32C/Castagnoli used by
-iSCSI~\cite{rfc3385} and Btrfs, Adler-32, Fletcher-32), the Jenkins lookup3
-hash used by HDF5 v2 metadata pages, and Reed-Solomon codes~\cite{reedsolomon}
-detect random bit errors arising from hardware faults, transmission errors,
-or filesystem bugs~\cite{koopman2002crc}. They are extremely fast (often
-hardware-accelerated), compact (4--8\,B), and widely deployed in storage and
-networking. The HDF5 fletcher32 chunk filter is in this family. However, all
-listed codes are linear over $\mathrm{GF}(2)$ and can be inverted in closed
-form by an adversary: given a desired alteration, the attacker computes a
-matching tail correction that preserves the checksum. They therefore detect
+iSCSI~\cite{rfc3385} and Btrfs, Adler-32 and CRC-32 used in Lustre RPCs,
+Fletcher-32), the Jenkins lookup3 hash used by HDF5 v2 metadata pages, and
+Reed-Solomon codes~\cite{reedsolomon} detect random bit errors arising from
+hardware faults, transmission errors, or filesystem bugs~\cite{koopman2002crc}.
+High-performance environments increasingly adopt T10-PI (SCSI Protection
+Information, also known as T10-DIF)~\cite{t10dif} for end-to-end,
+hardware-accelerated integrity checking from the compute node down to the
+physical drive. The HDF5 fletcher32 chunk filter is in this family. However,
+all listed codes are linear over $\mathrm{GF}(2)$ and can be inverted in
+closed form by an adversary: given a desired alteration, the attacker computes
+a matching tail correction that preserves the checksum. They therefore detect
 \emph{accidental} corruption only, not \emph{adversarial} tampering, and
 cannot serve as the primary integrity primitive for an authentication scheme.
 
@@ -291,20 +293,27 @@ authenticity of the whole, but verification requires re-reading every byte---no
 sub-dataset partial verification is possible from a flat hash. RustyHDF5's
 existing flat-SHA-256 provenance feature is in this category.
 
-\subsection{Symmetric-key authentication: MACs and AEAD}
+\subsection{Symmetric-key authentication: MACs, AEAD, and homomorphic hashing}
 
 Message authentication codes (HMAC~\cite{rfc2104}, KMAC, AES-CMAC, GMAC,
 Poly1305) and authenticated encryption schemes (AES-GCM~\cite{nist80038d},
 ChaCha20-Poly1305~\cite{rfc8439}, AES-OCB, AEGIS) bind authenticity to a
 shared symmetric key. Tags are compact (16\,B). HMAC-SHA-256 and Poly1305 run
 at multi-GB/s per core. Per-chunk MAC or AEAD provides chunk-level adversarial
-integrity at minimal cost. The fundamental limitation is that verification
-requires possession of the secret key: a third-party auditor, a public archive
-mirror, or a downstream researcher receiving a derived hyperslab cannot verify
-without it. Symmetric authentication is therefore appropriate as a
-\emph{component} (e.g., AEAD ciphertext authenticity) but cannot be the public
-provenance primitive on its own. Encrypt-then-MAC composition is the canonical
-secure pattern~\cite{bellare2000encrypt,bellare2000encryptmac}.
+integrity at minimal cost. Homomorphic MACs (e.g., Boneh--Freeman
+schemes~\cite{boneh2011homomorphicmac} for network coding) and homomorphic
+hashing (e.g., Meta's LtHash~\cite{lthash}) extend this family by allowing
+intermediate nodes to incrementally aggregate authenticators when combining
+data packets or propagating chunk updates, avoiding the need to re-authenticate
+from scratch---a property relevant to streaming and in-transit integrity.
+
+The fundamental limitation of all symmetric authenticators, however, is that
+verification requires possession of the secret key: a third-party auditor, a
+public archive mirror, or a downstream researcher receiving a derived hyperslab
+cannot verify without it. Symmetric authentication is therefore appropriate as
+a \emph{component} (e.g., AEAD ciphertext authenticity) but cannot serve as
+the public provenance primitive on its own. Encrypt-then-MAC composition is the
+canonical secure pattern~\cite{bellare2000encrypt,bellare2000encryptmac}.
 
 \subsection{Classical asymmetric signatures}
 
@@ -326,10 +335,10 @@ scheme considered below; the design question is what they sign over.
 A cryptographically relevant quantum computer (CRQC) breaks RSA, DSA, ECDSA,
 and EdDSA via Shor's algorithm. Scientific datasets routinely retain value for
 30--100~years, so any signature placed today must be \emph{harvest-now,
-forge-later} resistant. NIST has standardized two post-quantum
-signature schemes for general use: ML-DSA (Module-Lattice DSA, formerly
-Dilithium)~\cite{fips204} and SLH-DSA (Stateless Hash-based DSA, formerly
-SPHINCS$^+$)~\cite{fips205}. Stateful hash-based schemes XMSS~\cite{rfc8391}
+forge-later} resistant. In 2024 NIST officially standardized its first
+post-quantum signature schemes for general use: ML-DSA (Module-Lattice DSA,
+FIPS~204, formerly Dilithium)~\cite{fips204} and SLH-DSA (Stateless Hash-based
+DSA, FIPS~205, formerly SPHINCS$^+$)~\cite{fips205}. Stateful hash-based schemes XMSS~\cite{rfc8391}
 and LMS~\cite{rfc8554} have smaller signatures but require careful state
 management, making them awkward for distributed scientific workflows. Hybrid
 classical~+~PQ signatures (Ed25519~+~ML-DSA-65 or Ed25519~+~SLH-DSA-128s) are
@@ -405,48 +414,64 @@ are broken by Shor; all require an $O(N)$ multi-scalar multiplication to
 commit; none are competitive with hash trees for our setting at petabyte
 scale.
 
-\subsection{Zero-knowledge proofs of integrity}
+\subsection{Zero-knowledge proofs and folding schemes}
 
-ZK-SNARKs (Groth16, PLONK, Marlin) and ZK-STARKs prove correctness of
+ZK-SNARKs (Groth16, PLONK, Marlin) and ZK-STARKs prove the correctness of
 arbitrary computation, including correctness of an integrity claim, with
-minimal proof size. Proofs of Data Possession~\cite{ateniese2007pdp} and
-Proofs of Retrievability~\cite{juels2007por} let a verifier audit remote
-storage without retrieving full data, by sampling random blocks and checking
-authenticator tags. These primitives are most useful when (a)~one wishes to
-hide intermediate values from the verifier, or (b)~one wishes to perform
-\emph{spot-checks} rather than complete verification. Both situations are
-distinct from our problem (researchers want full guarantees over the data
-they actually read) and impose substantial proving cost. They remain candidates
-for orthogonal extensions (e.g., a sampling-based audit of an archive's
-overall integrity).
+minimal proof size. Recent breakthroughs in ZK \emph{folding schemes} (Nova,
+SuperNova, HyperNova~\cite{kothapalli2022nova}) have drastically reduced the
+overhead of Incrementally Verifiable Computation (IVC) by deferring expensive
+SNARK operations, enabling efficient step-by-step proofs of execution.
+Proofs of Data Possession~\cite{ateniese2007pdp} and Proofs of
+Retrievability~\cite{juels2007por} let a verifier audit remote storage without
+retrieving full data by sampling random blocks.
+
+These primitives are most useful when (a)~one wishes to hide intermediate
+values from the verifier, (b)~one wishes to perform \emph{spot-checks} rather
+than complete verification, or (c)~one is verifying continuous iterative
+computation paths. For static data subsetting---where researchers want full
+guarantees over the arbitrary hyperslabs they extract---ZK-SNARKs and folding
+schemes impose $O(N)$ proving overhead compared to the lightweight
+$O(k\log N)$ Merkle inclusion proofs discussed in \S\ref{sec:selection}. They
+remain candidates for orthogonal extensions (e.g., a sampling-based audit of
+an archive's overall integrity).
 
 \subsection{Trusted execution environments and remote attestation}
 
 Intel SGX~\cite{costan2016sgx}, AMD SEV-SNP, ARM TrustZone, and AWS Nitro
 Enclaves provide hardware-isolated execution with remote attestation; TPM
 2.0~\cite{tpm2} and Linux IMA/EVM~\cite{sailer2004ima} provide measured-boot
-integrity tied to platform-binding keys. dm-verity~\cite{dmverity} (Android
-read-only partitions) and fs-verity~\cite{fsverity} (Linux per-file Merkle
-trees enforced by the kernel) bind such measurements to filesystem objects.
-TEE-anchored memory integrity trees are also used inside the enclave itself.
-These mechanisms are powerful within a controlled platform but rely on
-recurrent vulnerability disclosures, vendor-specific attestation services,
-and the integrity of a particular hardware instance---assumptions
-incompatible with multi-decade archival of scientific data that may be
-read on platforms not yet built.
+integrity tied to platform-binding keys. TEE-anchored memory integrity trees
+are also used inside the enclave itself. These mechanisms are powerful within
+a controlled platform but rely on recurrent vulnerability disclosures,
+vendor-specific attestation services, and the integrity of a particular
+hardware instance---assumptions incompatible with multi-decade archival of
+scientific data that may be read on platforms not yet built.
 
-\subsection{Filesystem and block-level integrity}
+\subsection{Filesystem and HPC storage integrity}
 
+HPC parallel filesystems and distributed object stores have increasingly
+adopted block-level and end-to-end integrity mechanisms.
 ZFS~\cite{bonwick2003zfs} stores Fletcher4 or SHA-256 checksums for every
-block and arranges them in a Merkle-style hierarchy that enables silent-corruption
-detection and self-healing from redundant copies. Btrfs uses CRC-32C per
-block. dm-integrity (LUKS) provides per-block AEAD. dm-verity, fs-verity,
-and Linux IMA bind kernel-enforced Merkle hashes to read-time policy. These
-are excellent within their respective trust boundaries, but the integrity
-guarantee evaporates the moment data leaves the filesystem (e.g., copied to
-S3, archived to tape, transmitted across a WAN). For a portable, archive-grade
-guarantee, the integrity must travel \emph{with} the file rather than reside
-in the storage substrate.
+block and arranges them in a Merkle-style hierarchy that enables
+silent-corruption detection and self-healing from redundant copies. Lustre
+employs wire checksumming (Adler-32, CRC-32) and integrates T10-PI for
+hardware-accelerated end-to-end protection against silent data corruption.
+DAOS (Distributed Asynchronous Object Storage)~\cite{daos2020}, which powers
+exascale deployments such as Argonne National Laboratory's Aurora
+supercomputer, provides high-performance transactional I/O with native
+end-to-end data integrity and self-healing over NVMe. Btrfs uses CRC-32C per
+block. dm-integrity (LUKS) provides per-block AEAD; dm-verity~\cite{dmverity}
+and fs-verity~\cite{fsverity} bind kernel-enforced Merkle hashes to
+read-time policy; Linux IMA/EVM~\cite{sailer2004ima} extends measured-boot
+integrity to individual files.
+
+These mechanisms are excellent within their respective trust boundaries, but
+the integrity guarantee evaporates the moment data leaves the filesystem (e.g.,
+copied to S3, archived to tape, transferred between collaborating institutions,
+or downloaded to a researcher's laptop). For a portable, archive-grade
+guarantee, the cryptographic authenticity must travel \emph{with} the file
+format rather than reside exclusively in the storage substrate.
 
 \subsection{Cloud object-store integrity primitives}
 
@@ -512,8 +537,9 @@ scientific data: cryptographic hashes (no partial verification), per-chunk
 MACs or AEAD (no public verifiability), per-chunk signatures (storage and
 compute prohibitive), hash trees with a signed root (subset proofs, no trusted
 setup, PQ-upgradeable, builds at hash speed), accumulators and polynomial
-commitments (trusted setup or post-quantum-broken or both), and
-filesystem/cloud-store mechanisms (not portable). \S\ref{sec:selection}
+commitments (trusted setup or post-quantum-broken or both), zero-knowledge
+folding schemes (high $O(N)$ proving overhead for static-data subsetting),
+and filesystem/HPC storage mechanisms (not portable). \S\ref{sec:selection}
 formalizes the requirements and selects from this shortlist.
 
 %% ============================================================================
