@@ -575,10 +575,20 @@ requirements that any candidate primitive must meet for the HDF5 setting:
     On a verification failure, the mechanism must identify which specific
     chunks (or a tight superset) were modified, in $O(\log N)$ work, rather
     than only signaling that \emph{some} corruption occurred.
-  \item[R5: Verifiable subset extraction.]
-    A recipient of a hyperslab plus a small auxiliary proof must be able to
-    cryptographically verify that the hyperslab is a true subset of the
-    signed parent dataset, without access to the rest of the dataset.
+  \item[R5a: Per-chunk authenticity.]
+    Each delivered chunk in a requested hyperslab must be cryptographically
+    tied to the original signer's commitment, so that an adversary cannot
+    substitute a chunk from outside the signed dataset.
+  \item[R5b: Coverage and completeness proof.]
+    Beyond per-chunk authenticity, the recipient must be able to verify that
+    the delivered chunks are \emph{exactly} the chunks of the requested
+    hyperslab---none silently dropped, none substituted from a different
+    region of the same signed dataset---against a single signer commitment,
+    without access to the rest of the dataset. Per-chunk signatures or MACs
+    alone satisfy R5a but not R5b: an adversary can deliver a valid signed
+    chunk in place of the requested one, and the recipient has no
+    sub-linear-bandwidth way to detect the substitution without an extra
+    structure that, in practice, reduces to a hash tree.
   \item[R6: Public verifiability.]
     Verification must require only the original signer's public key, not a
     shared secret, so that third-party auditors, archive mirrors, and
@@ -610,7 +620,7 @@ identified in the survey against these ten requirements.
 \begin{table}[h]
 \centering
 \small
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{3.5pt}
 \begin{tabular}{lccccccc>{\columncolor{blue!12}}c}
 \toprule
 \textbf{Requirement}
@@ -623,24 +633,43 @@ identified in the survey against these ten requirements.
   & \textbf{\shortstack{TEE /\\fs-verity}}
   & \textbf{\shortstack{Merkle\\tree}} \\
 \midrule
-R1 partial verification & $\times$   & \checkmark & \checkmark & \checkmark & \checkmark & sample-only & \checkmark & \checkmark \\
-R2 incremental extend   & \checkmark & \checkmark & \checkmark & costly     & costly     & costly      & \checkmark & \checkmark \\
-R3 in-place update      & $\times$   & \checkmark & \checkmark & costly     & costly     & costly      & \checkmark & \checkmark \\
-R4 tamper localization  & $\times$   & \checkmark & \checkmark & $\times$   & partial    & $\times$    & \checkmark & \checkmark \\
-R5 subset extraction    & $\times$   & $\times$   & $\times$   & complex    & \checkmark & \checkmark  & $\times$   & \checkmark \\
-R6 public verifiability & \checkmark & $\times$   & \checkmark & \checkmark & \checkmark & \checkmark  & vendor     & \checkmark \\
-R7 compact subset proof & $\times$   & $\times$   & $\times$   & $O(1)$     & $O(1)$     & $O(1)$      & ---        & $O(\log N)$ \\
-R8 no trusted setup     & \checkmark & \checkmark & \checkmark & $\times$   & $\times$   & varies      & vendor     & \checkmark \\
-R9 PQ upgrade path      & \checkmark & \checkmark & $\dagger$  & $\times$   & $\times$   & STARK only  & vendor     & \checkmark \\
-R10 HPC-feasible build  & \checkmark & \checkmark & costly     & $\times$   & $\times$   & $\times$    & \checkmark & \checkmark \\
+R1 partial verification & $\times$   & \checkmark & \checkmark & \checkmark & \checkmark & sample$^c$ & \checkmark & \checkmark \\
+R2 incremental extend   & \checkmark & \checkmark & \checkmark$^d$ & MSM$^a$ & MSM$^a$ & IVC$^b$    & \checkmark & \checkmark \\
+R3 in-place update      & $\times$   & \checkmark & \checkmark$^d$ & MSM$^a$ & MSM$^a$ & IVC$^b$    & \checkmark & \checkmark \\
+R4 tamper localization  & $\times$   & \checkmark & \checkmark & $\times$   & partial    & $\times$   & \checkmark & \checkmark \\
+R5a chunk authenticity  & $\times$   & \checkmark$^e$ & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+R5b coverage proof      & $\times$   & $\times$   & manifest$^f$ & complex    & \checkmark & \checkmark & $\times$   & \checkmark \\
+R6 public verifiability & \checkmark & $\times$   & \checkmark & \checkmark & \checkmark & \checkmark & vendor     & \checkmark \\
+R7 subset-proof size    & ---        & $16k$\,B   & $64k$\,B$^g$ & $O(1)$  & $O(1)$    & $O(1)$     & ---        & $32k\log N$\,B \\
+R8 no trusted setup     & \checkmark & \checkmark & \checkmark & $\times$   & $\times$   & varies     & vendor     & \checkmark \\
+R9 PQ upgrade path      & \checkmark & \checkmark & $\dagger$  & $\times$   & $\times$   & STARK only & vendor     & \checkmark \\
+R10 HPC-feasible build  & \checkmark & \checkmark & 3\,h$^h$   & 3\,h$^a$   & 1\,s$^a$   & 1\,h$^b$   & \checkmark & 30\,s \\
 \bottomrule
 \end{tabular}
 \caption{Candidate primitives against the requirements of
-\S\ref{sec:requirements}. ``vendor'' = depends on platform vendor; ``costly''
-= achievable but with non-trivial overhead; ``sample-only'' = provides
-sampling-based assurance rather than complete verification.
-$\dagger$~Per-chunk signatures upgrade to PQ by replacing the scheme but
-remain storage-prohibitive.}
+\S\ref{sec:requirements}. Build-cost row (R10) reports order-of-magnitude
+single-CPU time at $N=10^7$ chunks (10\,TB at 1\,MB chunks); Merkle baseline
+is $\sim$30\,s of SHA-256 with SHA-NI. ``vendor'' = depends on platform
+vendor; ``sample$^c$'' = sampling assurance only; ``MSM'' = $O(N)$
+multi-scalar multiplication required per update; ``IVC'' = incrementally
+verifiable computation step.
+$^a$~RSA accumulator and KZG: each update is one $O(N)$ exponentiation/MSM,
+$\sim$1\,s--3\,h on commodity HW.
+$^b$~ZK folding step (e.g., Nova/HyperNova) takes tens of ms per step;
+aggregating $10^7$ steps approaches $\sim$1\,h.
+$^c$~PoR/PDP provides sampling-based assurance, not complete verification.
+$^d$~Per-chunk signature update is $O(1)$ for one chunk but signing every
+chunk to commit the dataset is the dominant cost (R10).
+$^e$~Per-chunk MAC: authentic to the holder of the secret key only; fails R6.
+$^f$~Per-chunk signatures provide chunk authenticity but require an
+additional signed manifest (which is itself a Merkle root, in practice) to
+prove coverage and completeness against the parent dataset.
+$^g$~Per-chunk classical signatures: 64\,B/chunk; ML-DSA-65 raises this to
+3{,}293\,B/chunk.
+$^h$~ML-DSA-65 signing at $\sim$1\,ms/chunk $\times$ $10^7$ chunks
+$\approx$ 3\,CPU-hours.
+$\dagger$~Per-chunk signatures upgrade to PQ by swapping the scheme but
+remain storage-prohibitive (33\,GB/dataset at $N=10^7$).}
 \label{tab:integrity-comparison}
 \end{table}
 
@@ -648,32 +677,79 @@ remain storage-prohibitive.}
 \label{sec:selection-conclusion}
 
 A hash tree (binary or sparse Merkle tree) over chunk hashes, with the root
-signed by a hybrid classical~+~PQ signature, is the only candidate that
-satisfies R1--R10 simultaneously:
+signed by a hybrid classical~+~PQ signature, is the only candidate satisfying
+R1--R10 \emph{without trusted setup or post-quantum liability}:
 
 \begin{itemize}[nosep]
-  \item Subset proofs of size $O(k\log N)$ (R5, R7) come for free from the
-    tree structure; subset extraction (R5) reduces to a Merkle multiproof.
+  \item Subset and coverage proofs of size $O(k\log N)$ (R5a, R5b, R7) come
+    directly from the tree structure; subset extraction reduces to a Merkle
+    multiproof, and coverage to a sibling-witness completeness check.
   \item Tamper localization (R4) walks from root to leaves in $O(\log N)$.
   \item In-place update (R3) and append (R2) recompute only the
-    $O(\log N)$ hashes on the affected root path, not the whole tree.
-  \item No trusted setup (R8); a hash tree is post-quantum simply by choosing
-    a PQ-secure hash (R9) and binding the root with a PQ signature.
+    $O(\log N)$ hashes on the affected root path---$\sim$30 SHA-256
+    invocations ($\sim$3\,$\mu$s on SHA-NI) per update at $N=10^7$.
+  \item No trusted setup (R8); the construction is post-quantum simply by
+    choosing a PQ-secure hash (R9) and binding the root with a PQ signature.
   \item Build cost (R10) is one hash per chunk plus $N-1$ pair hashes for
-    internal nodes, executable at memory-bandwidth speed on existing HPC
-    hardware (SHA-NI, AVX-512, NEON).
+    internal nodes---$\sim$30\,s of SHA-NI throughput at $N=10^7$, two
+    orders of magnitude below the algebraic alternatives.
   \item Public verifiability (R6) is provided by the asymmetric root
     signature.
 \end{itemize}
 
-The competitor primitives all fail at least one core requirement. Per-chunk
-MACs and AEAD lose R6 and R7. Per-chunk signatures lose R7 and R10. Flat
-hashing loses R1, R3, R4, R5. RSA accumulators and bilinear/KZG schemes lose
-R8 and R9 and have no natural ordered-coverage proof (weakening R5).
-ZK-SNARKs, PoR, and PDP either trade completeness for sampling (weakening R1
-and R4) or carry trusted-setup or pairing-based PQ liabilities (R8, R9).
-TEE/fs-verity loses portability across the multi-decade archival horizon and
-binds verification to specific vendors and platforms.
+\paragraph{Refutation of the strongest alternatives.}
+The most credible competitor on first inspection is \textbf{Verkle}: a
+high-fanout KZG-based tree producing constant-size multiproofs (better than
+Merkle's $O(k\log N)$ on R7 alone), with chunk-aligned leaves that satisfy
+R1, R3, R4, R5a, R5b. Verkle is disqualified by R8 and R9: every Verkle
+variant requires a trusted-setup ceremony for the KZG structured reference
+string---and even where such a ceremony exists publicly (e.g., the 2023
+Ethereum KZG ceremony), its parameters are bound to a specific
+elliptic-curve pairing that is broken by Shor's algorithm. For 50-year
+scientific archives signed today, R8 and R9 are non-negotiable: there is no
+acceptable scenario in which ``the curve was broken in 2045 and we need to
+re-sign 30 years of NOAA records'' is the right design choice.
+
+The most plausible \emph{hybrid} is \textbf{BLS-aggregated per-chunk
+signatures}, which collapse $N$ per-chunk signatures into a single 48-byte
+aggregate and would otherwise satisfy R1--R6, R10. BLS is disqualified by R8
+(BLS12-381 uses a structured reference setup) and R9 (pairings are not
+post-quantum). Aggregate verification still requires the verifier to combine
+$N$ public-key/message pairs to recompute the aggregate, and R5b (coverage
+against the parent dataset) is not provided without an additional layer that
+again reduces to a hash tree.
+
+A second plausible hybrid is \textbf{per-chunk PQ signatures} (e.g.,
+ML-DSA-65 per chunk) with no aggregation. This satisfies R6, R8, R9 but
+fails R7 and R10: at $N=10^7$ chunks, ML-DSA-65 produces 33\,GB of signature
+data and signing takes approximately three CPU-hours per dataset---two
+orders of magnitude worse than building a Merkle tree over the same data,
+with no compensating benefit over a single signed root.
+
+The remaining candidates fall to single-line objections. \textbf{Per-chunk
+MACs} and AEAD lose R6 outright (any third-party auditor or downstream
+researcher must hold the secret key). \textbf{Flat hashing} loses R1, R3,
+R4, R5b. \textbf{RSA accumulators} share Verkle's R8 and R9 failures and
+add no compensating advantage over Merkle. \textbf{ZK-SNARKs and folding
+schemes (Nova, HyperNova)} are designed for proving correctness of
+\emph{computation}, not authenticating static data subsets, and the proving
+overhead ($O(N)$ field operations) exceeds Merkle by orders of magnitude
+without unlocking a property Merkle lacks. \textbf{PoR/PDP} trade
+completeness for sampling, weakening R1 and R4. \textbf{TEE-anchored
+schemes} (SGX, fs-verity) lose portability across the multi-decade archival
+horizon and bind verification to specific vendors and platforms, violating
+R6 in spirit and R8 in letter.
+
+\paragraph{Honest framing of the conclusion.}
+Merkle is not the \emph{only} primitive in absolute terms that satisfies R1
+through R7---Verkle is competitive there, and BLS-aggregated per-chunk
+signatures are competitive on R1--R6. What distinguishes Merkle is that it
+is the only primitive achieving R1--R10 \emph{simultaneously, without a
+trusted-setup ceremony and without a pairing- or factoring-based primitive
+that Shor's algorithm breaks}. R8 and R9 are the discriminating
+requirements, and they are forced by the multi-decade archival horizon of
+scientific data---a constraint not present in the blockchain settings where
+KZG, Verkle, and BLS were designed.
 
 The remainder of this document therefore designs, implements, and evaluates a
 Merkle-tree integrity scheme tailored to HDF5's chunked storage and hyperslab
