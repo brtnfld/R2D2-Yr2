@@ -326,7 +326,7 @@ produce a valid signature. Signatures are 64--512\,B per object. Signing one
 hash per dataset (or one hash per file) is well within the cost budget of any
 HDF5 workflow. \emph{Signing every chunk} is a different proposition: at
 $N=10^6$--$10^7$ chunks (1--10\,TB at 1\,MB chunk size), per-chunk Ed25519
-signatures already consume 64\,MB--640\,MB, while ML-DSA-65 (3{,}293\,B per
+signatures already consume 64\,MB--640\,MB, while ML-DSA-65 (3{,}309\,B per
 signature) produces 3--33\,GB of signature data and commensurate signing time. BLS aggregate signatures reduce storage at the
 cost of a pairing-based, non-post-quantum primitive. Asymmetric signatures
 are well-suited as the \emph{root authenticator} of an aggregating structure,
@@ -643,20 +643,20 @@ R6 public verifiability & \checkmark & $\times$   & \checkmark & \checkmark & \c
 R7 subset-proof size    & ---        & $16k$\,B   & $64k$\,B$^g$ & $O(1)$  & $O(1)$    & $O(1)$     & ---        & $32k\log N$\,B \\
 R8 no trusted setup     & \checkmark & \checkmark & \checkmark & $\times$   & $\times$   & varies     & vendor     & \checkmark \\
 R9 PQ upgrade path      & \checkmark & \checkmark & $\dagger$  & $\times$   & $\times$   & STARK only & vendor     & \checkmark \\
-R10 HPC-feasible build  & \checkmark & \checkmark & 3\,h$^h$   & 3\,h$^a$   & 1\,s$^a$   & 1\,h$^b$   & \checkmark & 30\,s \\
+R10 HPC-feasible build  & \checkmark & \checkmark & 3\,h$^h$   & 3\,h$^a$   & 1\,s$^a$   & $>$24\,h$^b$ & \checkmark & 30\,s$^i$ \\
 \bottomrule
 \end{tabular}
 \caption{Candidate primitives against the requirements of
 \S\ref{sec:requirements}. Build-cost row (R10) reports order-of-magnitude
-single-CPU time at $N=10^7$ chunks (10\,TB at 1\,MB chunks); Merkle baseline
-is $\sim$30\,s of SHA-256 with SHA-NI. ``vendor'' = depends on platform
+build time at $N=10^7$ chunks (10\,TB at 1\,MB chunks); see footnote~$^i$
+for the Merkle baseline breakdown. ``vendor'' = depends on platform
 vendor; ``sample$^c$'' = sampling assurance only; ``MSM'' = $O(N)$
 multi-scalar multiplication required per update; ``IVC'' = incrementally
 verifiable computation step.
 $^a$~RSA accumulator and KZG: each update is one $O(N)$ exponentiation/MSM,
 $\sim$1\,s--3\,h on commodity HW.
-$^b$~ZK folding step (e.g., Nova/HyperNova) takes tens of ms per step;
-aggregating $10^7$ steps approaches $\sim$1\,h.
+$^b$~ZK folding step (e.g., Nova/HyperNova) takes $\sim$10\,ms per step;
+$10^7$ steps $\times$ 10\,ms $= 10^5$\,s $\approx 28$\,h ($>$24\,h).
 $^c$~PoR/PDP provides sampling-based assurance, not complete verification.
 $^d$~Per-chunk signature update is $O(1)$ for one chunk but signing every
 chunk to commit the dataset is the dominant cost (R10).
@@ -665,9 +665,12 @@ $^f$~Per-chunk signatures provide chunk authenticity but require an
 additional signed manifest (which is itself a Merkle root, in practice) to
 prove coverage and completeness against the parent dataset.
 $^g$~Per-chunk classical signatures: 64\,B/chunk; ML-DSA-65 raises this to
-3{,}293\,B/chunk.
+3{,}309\,B/chunk (FIPS~204 final).
 $^h$~ML-DSA-65 signing at $\sim$1\,ms/chunk $\times$ $10^7$ chunks
 $\approx$ 3\,CPU-hours.
+$^i$~Merkle baseline: $\sim$30\,s assumes a parallel HPC leaf-hashing pass
+(${\sim}200$ cores $\times$ 1.5\,GB/s $\approx$ 300\,GB/s aggregate for 10\,TB);
+tree aggregation over pre-computed leaf hashes adds $<1$\,s on a single core.
 $\dagger$~Per-chunk signatures upgrade to PQ by swapping the scheme but
 remain storage-prohibitive (33\,GB/dataset at $N=10^7$).}
 \label{tab:integrity-comparison}
@@ -691,8 +694,11 @@ R1--R10 \emph{without trusted setup or post-quantum liability}:
   \item No trusted setup (R8); the construction is post-quantum simply by
     choosing a PQ-secure hash (R9) and binding the root with a PQ signature.
   \item Build cost (R10) is one hash per chunk plus $N-1$ pair hashes for
-    internal nodes---$\sim$30\,s of SHA-NI throughput at $N=10^7$, two
-    orders of magnitude below the algebraic alternatives.
+    internal nodes. At $N=10^7$ chunks (10\,TB), leaf hashing completes in
+    $\sim$30\,s on a typical HPC node (parallel I/O across ${\sim}200$ cores
+    at 1.5\,GB/s); tree aggregation over pre-computed leaf hashes adds
+    $<1$\,s on a single core---two or more orders of magnitude below the
+    algebraic alternatives.
   \item Public verifiability (R6) is provided by the asymmetric root
     signature.
 \end{itemize}
