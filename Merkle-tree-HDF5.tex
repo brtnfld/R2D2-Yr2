@@ -79,7 +79,7 @@ tamper localization, in-place and incremental update support, verifiable subset
 extraction, public verifiability, no trusted setup, post-quantum upgradeability,
 and HPC-feasible build cost). From this comparative analysis we conclude that
 a Merkle-tree provenance scheme is the only primitive that simultaneously
-satisfies all of these requirements at petabyte scale, and we then design,
+satisfies all of these requirements at terabyte scale, and we then design,
 implement, and evaluate such a scheme in RustyHDF5~\cite{rustyhdf5}. Beyond
 the systems architecture (hybrid root-attribute plus chunked companion
 dataset, Encrypt-then-MAC filter-pipeline ordering, version-counter nonce
@@ -117,9 +117,11 @@ shared trust infrastructure (the KeyStore and \texttt{h5sign} signing tool
 developed under Task~2's plugin-signature work, PR~\#6198).
 
 \paragraph{The problem.}
-Scientific HDF5 datasets routinely reach terabyte to petabyte scale, are
-retained for decades, and are consumed by readers who access only small
-hyperslabs at a time. They live on shared parallel filesystems, in cloud
+Scientific HDF5 datasets routinely reach tens of gigabytes to tens of
+terabytes---with individual simulation snapshots (e.g., IllustrisTNG
+cosmological runs) exceeding 75\,TB---while institutional archives and
+multi-mission collections reach petabyte scale. These datasets are retained
+for decades and consumed by readers who access only small hyperslabs at a time. They live on shared parallel filesystems, in cloud
 object stores, on archival tape, and in cross-institutional transfers; at
 each stage they are exposed to silent bit-rot, accidental corruption, hostile
 modification by privileged adversaries (compromised storage nodes, malicious
@@ -137,7 +139,7 @@ metadata pages but do not cover raw chunk data. The fletcher32 chunk filter
 detects random bit errors but is a non-cryptographic CRC easily defeated by
 an adversary. RustyHDF5 includes a basic provenance feature that computes a
 single SHA-256 hash per dataset, but this requires rehashing the entire
-dataset to verify integrity---infeasible for petabyte-scale data where a
+dataset to verify integrity---infeasible for terabyte-scale data where a
 researcher may access only a small hyperslab. Neither the C~HDF5 library nor
 RustyHDF5 currently provides a mechanism for \emph{partial verification}
 (verifying a subset of chunks without touching the rest), \emph{incremental
@@ -158,7 +160,7 @@ distills the requirements imposed by HDF5's chunked storage model, hyperslab
 access patterns, and archival timescales (\S\ref{sec:selection}). From that
 comparison we conclude that a hash-tree (Merkle-tree) construction signed at
 the root is the only primitive that simultaneously meets all of the derived
-requirements at petabyte scale, and we devote the remainder of the document
+requirements at terabyte scale, and we devote the remainder of the document
 (\S\ref{sec:merkle} onward) to designing, implementing, and evaluating such
 a construction.
 
@@ -257,7 +259,7 @@ cryptography, distributed systems, filesystems, archival storage, and
 blockchain. This section surveys the primitives and systems that could in
 principle be used to authenticate large scientific datasets such as those
 held in HDF5. We organize the discussion by primitive class and conclude
-each subsection with the suitability of the approach for petabyte-scale,
+each subsection with the suitability of the approach for multi-terabyte,
 chunked, long-lived scientific data. \S\ref{sec:selection} then derives a
 formal set of requirements and selects a primitive on that basis.
 
@@ -323,8 +325,9 @@ anyone with the signer's public key can verify, and only the signer can
 produce a valid signature. Signatures are 64--512\,B per object. Signing one
 hash per dataset (or one hash per file) is well within the cost budget of any
 HDF5 workflow. \emph{Signing every chunk} is a different proposition: at
-$N=10^9$ chunks, per-chunk signatures consume $64$--$512$\,GB and require
-commensurate signing time. BLS aggregate signatures reduce storage at the
+$N=10^6$--$10^7$ chunks (1--10\,TB at 1\,MB chunk size), per-chunk Ed25519
+signatures already consume 64\,MB--640\,MB, while ML-DSA-65 (3{,}293\,B per
+signature) produces 3--33\,GB of signature data and commensurate signing time. BLS aggregate signatures reduce storage at the
 cost of a pairing-based, non-post-quantum primitive. Asymmetric signatures
 are well-suited as the \emph{root authenticator} of an aggregating structure,
 and as such are a building block of essentially every practical authentication
@@ -411,7 +414,7 @@ and have higher commit cost. FRI-based commitments underpin
 STARKs~\cite{bensasson2018stark} and are post-quantum but produce 10s of KB
 proofs. All pairing-based schemes (KZG, Verkle, Groth16~\cite{groth2016sn})
 are broken by Shor; all require an $O(N)$ multi-scalar multiplication to
-commit; none are competitive with hash trees for our setting at petabyte
+commit; none are competitive with hash trees for our setting at terabyte
 scale.
 
 \subsection{Zero-knowledge proofs and folding schemes}
@@ -556,8 +559,9 @@ requirements that any candidate primitive must meet for the HDF5 setting:
   \item[R1: Sub-dataset partial verification.]
     A reader of an arbitrary hyperslab consisting of $k$ chunks out of $N$
     must be able to verify those $k$ chunks at cost $O(k\log N)$ or better,
-    without reading or hashing the remaining $N-k$ chunks. (Petabyte-scale
-    rehashing is infeasible.)
+    without reading or hashing the remaining $N-k$ chunks. (Rehashing a
+    multi-terabyte dataset to verify a small hyperslab is computationally
+    prohibitive in practice.)
   \item[R2: Incremental extension.]
     Appending new chunks to a resizable dataset must not require re-signing
     or re-hashing existing chunks; the cost must be $O(\log N)$ or better
@@ -593,7 +597,7 @@ requirements that any candidate primitive must meet for the HDF5 setting:
     PQ-secure or by admitting a clean upgrade (e.g., swapping the hash or
     signature algorithm) without re-signing existing data.
   \item[R10: HPC-feasible build cost.]
-    Initial commitment over a petabyte-scale dataset must be feasible at
+    Initial commitment over a multi-terabyte dataset must be feasible at
     memory-bandwidth speeds on commodity HPC hardware, i.e., a small
     constant multiple of a single linear pass over the data.
 \end{description}
@@ -1473,7 +1477,7 @@ attribute-storage limits. HDF5 object headers begin failing silently past
 $\sim$64~KB and cannot accommodate 330~MB. Verifying that the
 file-level root attribute stays within these limits for all supported
 parameter combinations, and measuring batch verification throughput at
-$10^6$--$10^9$ chunks, is the substance of RQ7
+$10^4$--$10^7$ chunks (covering 10\,GB--10\,TB datasets at 1\,MB chunk size), is the substance of RQ7
 (\S\ref{sec:research-questions}) and is intended to be a primary empirical
 contribution of the resulting paper, supplying the first published
 PQ-signature performance numbers for scientific data archives.
@@ -1615,8 +1619,8 @@ security venue (USENIX Security, ACSAC) for the resulting paper.
     to the bandwidth saved over a na\"{\i}ve full-dataset re-download?
   \item \textbf{(Post-quantum signing.)}~What are the storage, sign, and
     verify costs of hybrid Ed25519~$+$~ML-DSA-65 (and Ed25519~$+$~SLH-DSA-128s)
-    signed roots at $10^4$--$10^5$ datasets per file and $10^6$--$10^9$
-    chunks per dataset, including object-header impact and end-to-end
+    signed roots at $10^4$--$10^5$ datasets per file and $10^4$--$10^7$
+    chunks per dataset (10\,GB--10\,TB at 1\,MB chunk size), including object-header impact and end-to-end
     verification time on x86-64 (with and without AVX-512) and ARM?
   \item \textbf{(Adversarial soundness.)}~Can a directed adversary with
     knowledge of the design and full read/write access to the storage
@@ -1839,8 +1843,8 @@ preserve focus.
     \,\|\, \tau \,\|\, \text{AlgID}$ (\S\ref{sec:pq-hybrid}), with Ed25519~$+$~SLH-DSA-128s
     available as an alternative. Measure end-to-end sign/verify cost,
     signature and public-key size, and object-header impact at
-    $10^4$--$10^5$ datasets per file and $10^6$--$10^9$ chunks per dataset
-    (RQ7) on x86-64 (with and without AVX-512) and ARM.
+    $10^4$--$10^5$ datasets per file and $10^4$--$10^7$ chunks per dataset
+    (10\,GB--10\,TB at 1\,MB chunk size; RQ7) on x86-64 (with and without AVX-512) and ARM.
   \item Implement ChaCha20-Poly1305 as the primary AEAD encryption filter,
     including the version-counter-based nonce derivation scheme
     (\S\ref{sec:nonce}) and the AEAD-tag~$+$~version-counter binding into
