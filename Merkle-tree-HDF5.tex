@@ -40,11 +40,11 @@
 \pagestyle{fancy}
 \fancyhf{}
 \rhead{\small S2-D2 Research Proposal --- DRAFT}
-\lhead{\small Merkle-Tree Provenance for Scientific Data}
+\lhead{\small Tamper Detection and Data Integrity for Scientific Data}
 \cfoot{\thepage}
 
 \title{%
-  \textbf{Merkle-Tree Provenance for Self-Describing Scientific Data}\\[0.5em]
+  \textbf{Tamper Detection and Data Integrity for Self-Describing Scientific Data}\\[0.5em]
   \large A Research Plan for the S2-D2 Framework\\
   Using RustyHDF5 as an Experimental Platform
 }
@@ -63,26 +63,36 @@
 
 \begin{abstract}
 This document proposes a research plan within the S2-D2
-(Securing Self-Describing Data) project that addresses the Task~3 (data
-authentication) objective. We propose a
-\emph{Merkle-tree provenance} scheme---implemented as a new capability in
-RustyHDF5---that supports incremental integrity verification, partial chunk
-verification, and tamper localization for HDF5 datasets at scale, informed by
-the HDF5 SHINES (Securing HDF5 for Industry, National Security, Engineering,
+(Securing Self-Describing Data) project that addresses the Task~3
+(data authentication) objective for HDF5, informed by the HDF5
+SHINES (Securing HDF5 for Industry, National Security, Engineering,
 and Science) security taxonomy developed under the NSF Safe-OSE
-program~\cite{shines}. Beyond the systems architecture (hybrid root-attribute
-plus chunked companion dataset, Encrypt-then-MAC filter pipeline ordering,
-version-counter nonce derivation for safe in-place updates), the work targets
-three research contributions intended to be evaluated in the resulting
-publication: (i)~a \emph{verifiable subset extraction} protocol enabling a
-recipient of an arbitrary hyperslab to cryptographically verify it as a true
-subset of a signed parent dataset; (ii)~a \emph{post-quantum hybrid signing}
-scheme (Ed25519~$+$~ML-DSA-65) measured at HDF5 scale, addressing the 50-year
-archival timescales typical of scientific data; and (iii)~a \emph{symbolic
-security analysis} (Tamarin or game-based) of the EtM~$+$~version-counter~$+$
-signed-root construction, evaluated against a directed-adversary red-team study
-on real scientific datasets. The RustyHDF5 pure-Rust HDF5
-implementation~\cite{rustyhdf5} serves as the experimental platform, enabling
+program~\cite{shines}. The proposal first surveys the state of the art in
+tamper detection and data-integrity primitives---error-detection codes,
+cryptographic hashes, message authentication codes and authenticated
+encryption, classical and post-quantum signatures, hash trees and
+authenticated data structures, cryptographic accumulators, polynomial and
+vector commitments, transparency logs, trusted hardware attestation,
+filesystem and cloud-store integrity mechanisms, and existing scientific-format
+checksums---and derives a set of requirements (sub-dataset partial verification,
+tamper localization, in-place and incremental update support, verifiable subset
+extraction, public verifiability, no trusted setup, post-quantum upgradeability,
+and HPC-feasible build cost). From this comparative analysis we conclude that
+a Merkle-tree provenance scheme is the only primitive that simultaneously
+satisfies all of these requirements at petabyte scale, and we then design,
+implement, and evaluate such a scheme in RustyHDF5~\cite{rustyhdf5}. Beyond
+the systems architecture (hybrid root-attribute plus chunked companion
+dataset, Encrypt-then-MAC filter-pipeline ordering, version-counter nonce
+derivation for safe in-place updates), the work targets three publishable
+research contributions: (i)~a \emph{verifiable subset extraction} protocol
+enabling a recipient of an arbitrary hyperslab to cryptographically verify it
+as a true subset of a signed parent dataset; (ii)~a \emph{post-quantum hybrid
+signing} scheme (Ed25519~$+$~ML-DSA-65) measured at HDF5 scale, addressing the
+50-year archival timescales typical of scientific data; and (iii)~a
+\emph{symbolic security analysis} (Tamarin or game-based) of the
+EtM~$+$~version-counter~$+$~signed-root construction, evaluated against a
+directed-adversary red-team study on real scientific datasets. The RustyHDF5
+pure-Rust HDF5 implementation serves as the experimental platform, enabling
 rapid prototyping before design decisions are committed to the C~HDF5 library.
 \end{abstract}
 
@@ -106,31 +116,62 @@ primarily to Task~3, with a secondary connection to Task~2 through
 shared trust infrastructure (the KeyStore and \texttt{h5sign} signing tool
 developed under Task~2's plugin-signature work, PR~\#6198).
 
-The core gap this research addresses:
+\paragraph{The problem.}
+Scientific HDF5 datasets routinely reach terabyte to petabyte scale, are
+retained for decades, and are consumed by readers who access only small
+hyperslabs at a time. They live on shared parallel filesystems, in cloud
+object stores, on archival tape, and in cross-institutional transfers; at
+each stage they are exposed to silent bit-rot, accidental corruption, hostile
+modification by privileged adversaries (compromised storage nodes, malicious
+insiders, in-transit attackers), and---over the multi-decade archival
+horizon---future quantum adversaries who may forge classical signatures on
+data harvested today. The present work asks how such datasets can be
+\emph{authenticated} so that any reader, in any of these settings, can verify
+that the bytes they read match the bytes the original signer committed to.
 
-\paragraph{Granularity of integrity verification.}
-Current integrity mechanisms in HDF5 operate at either too coarse or too fine a
-granularity. The file format's v2 metadata checksums (Jenkins lookup3) protect
-individual metadata pages but do not cover raw data. RustyHDF5 includes a basic
-provenance feature that computes a single SHA-256 hash per dataset, but this
-requires rehashing the entire dataset to verify integrity---infeasible for
-petabyte-scale scientific data where a researcher may access only a small
-hyperslab. Neither the C~HDF5 library nor RustyHDF5 currently provides a
-mechanism for \emph{partial verification} (verifying a subset of chunks without
-touching the rest), \emph{incremental signing} (extending a dataset without
-invalidating existing signatures), or \emph{tamper localization} (identifying
-which specific chunks were modified).
+\paragraph{The gap in HDF5 today.}
+Current integrity mechanisms in HDF5 operate at either too coarse or too fine
+a granularity, and none provide cryptographic authentication of raw data. The
+file format's v2 metadata checksums (Jenkins lookup3) protect individual
+metadata pages but do not cover raw chunk data. The fletcher32 chunk filter
+detects random bit errors but is a non-cryptographic CRC easily defeated by
+an adversary. RustyHDF5 includes a basic provenance feature that computes a
+single SHA-256 hash per dataset, but this requires rehashing the entire
+dataset to verify integrity---infeasible for petabyte-scale data where a
+researcher may access only a small hyperslab. Neither the C~HDF5 library nor
+RustyHDF5 currently provides a mechanism for \emph{partial verification}
+(verifying a subset of chunks without touching the rest), \emph{incremental
+signing} (extending or updating a dataset without invalidating existing
+signatures), \emph{tamper localization} (identifying which specific chunks
+were modified), or \emph{post-quantum-secure provenance} appropriate to the
+30--100-year archival horizon of scientific data.
 
-This proposal addresses this gap using RustyHDF5~\cite{rustyhdf5}---a pure-Rust
-HDF5 implementation with zero C dependencies---as an experimental platform. The
-choice of RustyHDF5 is motivated by three factors: (1)~its modular crate
-architecture (separate crates for format parsing, I/O, filters, SIMD
-acceleration, and GPU compute) maps naturally to the S2-D2 framework
-components, providing clean integration points for new security layers;
-(2)~Rust's type system and memory safety guarantees enable
-rapid, safe prototyping of cryptographic components that would be
-error-prone in C; and (3)~the existing filter pipeline (deflate, shuffle,
-fletcher32) provides an extensible framework into which new security
+\paragraph{Approach of this document.}
+Tamper detection is a deep, mature area of cryptography and systems research,
+with primitives ranging from simple CRCs through cryptographic hashes, MACs,
+authenticated encryption, classical and post-quantum signatures, hash trees,
+authenticated data structures, accumulators, polynomial and vector
+commitments, transparency logs, trusted hardware attestation, and proofs of
+data possession or retrievability. Rather than presuppose a solution, the
+proposal first surveys this design space (\S\ref{sec:survey}) and then
+distills the requirements imposed by HDF5's chunked storage model, hyperslab
+access patterns, and archival timescales (\S\ref{sec:selection}). From that
+comparison we conclude that a hash-tree (Merkle-tree) construction signed at
+the root is the only primitive that simultaneously meets all of the derived
+requirements at petabyte scale, and we devote the remainder of the document
+(\S\ref{sec:merkle} onward) to designing, implementing, and evaluating such
+a construction.
+
+\paragraph{Experimental platform.}
+This work uses RustyHDF5~\cite{rustyhdf5}---a pure-Rust HDF5 implementation
+with zero C dependencies---as an experimental platform. The choice is
+motivated by three factors: (1)~its modular crate architecture (separate
+crates for format parsing, I/O, filters, SIMD acceleration, and GPU compute)
+maps naturally to the S2-D2 framework components, providing clean integration
+points for new security layers; (2)~Rust's type system and memory safety
+guarantees enable rapid, safe prototyping of cryptographic components that
+would be error-prone in C; and (3)~the existing filter pipeline (deflate,
+shuffle, fletcher32) provides an extensible framework into which new security
 filters---including encryption and Merkle hashing---can be inserted without
 modifying the core I/O path.
 
@@ -138,13 +179,13 @@ modifying the core I/O path.
 RustyHDF5 does not currently include encryption or cryptographic signing
 capabilities. Its provenance feature stores per-dataset SHA-256 content hashes
 and creator metadata as HDF5 attributes, but this is limited to flat
-whole-dataset hashing. The Merkle-tree provenance and the encryption
-filters required for authenticated data protection will be implemented as new
+whole-dataset hashing. The Merkle-tree provenance and the encryption filters
+required for authenticated data protection will be implemented as new
 capabilities in this research. The work is also informed by the HDF5 SHINES
-project~\cite{shines}---The HDF Group's NSF Safe-OSE effort (Award No.\ 2534078) to develop a
-safety, security, and privacy taxonomy for the HDF5 ecosystem---which provides
-the threat categorization and shared vocabulary within which these technical
-mechanisms operate.
+project~\cite{shines}---The HDF Group's NSF Safe-OSE effort (Award
+No.\ 2534078) to develop a safety, security, and privacy taxonomy for the
+HDF5 ecosystem---which provides the threat categorization and shared
+vocabulary within which these technical mechanisms operate.
 
 %% ============================================================================
 \section{Background}
@@ -199,123 +240,419 @@ The S2-D2 runtime (Figure~5 of the proposal) consists of three components:
     the Merkle-tree provenance layer that defines \emph{what} to verify.)
 \end{enumerate}
 
-\subsection{Related Work}
-\label{sec:related}
+\subsection{Asynchronous I/O for HDF5}
 
-\paragraph{Merkle trees in storage systems.}
-Merkle trees~\cite{merkle1987tree} are widely used for integrity verification
-in storage and distributed systems. ZFS~\cite{bonwick2003zfs} employs
-block-level checksums organized in a Merkle-like tree to detect silent data
-corruption, providing self-healing via redundant copies. Git~\cite{git_internals}
-uses a content-addressed Merkle DAG (blobs, trees, commits) to ensure
-repository integrity and enable efficient synchronization.
-IPFS~\cite{benet2014ipfs} generalizes this to a distributed filesystem where
-every block is content-addressed via a Merkle DAG. Certificate
-Transparency~\cite{laurie2014certificate} uses append-only Merkle trees to
-provide tamper-evident logs for TLS certificates, and
-Sigstore~\cite{newman2022sigstore} extends this model to software artifact
-signing. Our work adapts the Merkle tree concept specifically to HDF5's
-chunked storage model, where the natural unit of integrity is the chunk (not
-the filesystem block or Git blob), and where partial verification must align
-with HDF5's hyperslab access patterns.
+Tang et al.~\cite{tang2022async} demonstrated transparent asynchronous I/O for
+HDF5 using background threads, achieving significant latency hiding for
+metadata operations. This work is relevant to eventual STS integration of the
+provenance operations developed in this proposal, but the STS prototype itself
+is outside the scope of this document.
 
-\paragraph{Integrity in scientific data formats.}
+%% ============================================================================
+\section{Survey of Tamper-Detection and Data-Integrity Methods}
+\label{sec:survey}
+
+Tamper detection and data integrity is a deep, mature research area spanning
+cryptography, distributed systems, filesystems, archival storage, and
+blockchain. This section surveys the primitives and systems that could in
+principle be used to authenticate large scientific datasets such as those
+held in HDF5. We organize the discussion by primitive class and conclude
+each subsection with the suitability of the approach for petabyte-scale,
+chunked, long-lived scientific data. \S\ref{sec:selection} then derives a
+formal set of requirements and selects a primitive on that basis.
+
+\subsection{Error-detection codes (non-adversarial integrity)}
+
+Parity bits, cyclic redundancy checks (CRC-32, CRC-32C/Castagnoli used by
+iSCSI~\cite{rfc3385} and Btrfs, Adler-32, Fletcher-32), the Jenkins lookup3
+hash used by HDF5 v2 metadata pages, and Reed-Solomon codes~\cite{reedsolomon}
+detect random bit errors arising from hardware faults, transmission errors,
+or filesystem bugs~\cite{koopman2002crc}. They are extremely fast (often
+hardware-accelerated), compact (4--8\,B), and widely deployed in storage and
+networking. The HDF5 fletcher32 chunk filter is in this family. However, all
+listed codes are linear over $\mathrm{GF}(2)$ and can be inverted in closed
+form by an adversary: given a desired alteration, the attacker computes a
+matching tail correction that preserves the checksum. They therefore detect
+\emph{accidental} corruption only, not \emph{adversarial} tampering, and
+cannot serve as the primary integrity primitive for an authentication scheme.
+
+\subsection{Cryptographic hash functions}
+
+Cryptographic hashes (SHA-1; SHA-2 family including SHA-256 and SHA-512
+\cite{fips180}; SHA-3 / Keccak~\cite{fips202}; BLAKE2 / BLAKE3~\cite{blake3};
+KangarooTwelve~\cite{k12}) provide preimage, second-preimage, and collision
+resistance suitable for adversarial integrity. SHA-256 is hardware-accelerated
+on modern x86 (SHA-NI) and ARMv8.4-A CPUs at $\sim$1.5--3~GB/s per core; BLAKE3
+exploits SIMD parallelism for memory-bandwidth-class throughput in software;
+KangarooTwelve uses Keccak-$p$ with a parallel sponge for similar performance.
+SHA-1 is broken against collision attacks~\cite{stevens2017sha1} and must not
+be used for new schemes. A single hash of a multi-terabyte dataset establishes
+authenticity of the whole, but verification requires re-reading every byte---no
+sub-dataset partial verification is possible from a flat hash. RustyHDF5's
+existing flat-SHA-256 provenance feature is in this category.
+
+\subsection{Symmetric-key authentication: MACs and AEAD}
+
+Message authentication codes (HMAC~\cite{rfc2104}, KMAC, AES-CMAC, GMAC,
+Poly1305) and authenticated encryption schemes (AES-GCM~\cite{nist80038d},
+ChaCha20-Poly1305~\cite{rfc8439}, AES-OCB, AEGIS) bind authenticity to a
+shared symmetric key. Tags are compact (16\,B). HMAC-SHA-256 and Poly1305 run
+at multi-GB/s per core. Per-chunk MAC or AEAD provides chunk-level adversarial
+integrity at minimal cost. The fundamental limitation is that verification
+requires possession of the secret key: a third-party auditor, a public archive
+mirror, or a downstream researcher receiving a derived hyperslab cannot verify
+without it. Symmetric authentication is therefore appropriate as a
+\emph{component} (e.g., AEAD ciphertext authenticity) but cannot be the public
+provenance primitive on its own. Encrypt-then-MAC composition is the canonical
+secure pattern~\cite{bellare2000encrypt,bellare2000encryptmac}.
+
+\subsection{Classical asymmetric signatures}
+
+RSA-PSS, RSA-PKCS\#1, ECDSA over P-256 or secp256k1, and Ed25519/EdDSA
+\cite{rfc8032} provide non-repudiable signatures with public verifiability:
+anyone with the signer's public key can verify, and only the signer can
+produce a valid signature. Signatures are 64--512\,B per object. Signing one
+hash per dataset (or one hash per file) is well within the cost budget of any
+HDF5 workflow. \emph{Signing every chunk} is a different proposition: at
+$N=10^9$ chunks, per-chunk signatures consume $64$--$512$\,GB and require
+commensurate signing time. BLS aggregate signatures reduce storage at the
+cost of a pairing-based, non-post-quantum primitive. Asymmetric signatures
+are well-suited as the \emph{root authenticator} of an aggregating structure,
+and as such are a building block of essentially every practical authentication
+scheme considered below; the design question is what they sign over.
+
+\subsection{Post-quantum signatures}
+
+A cryptographically relevant quantum computer (CRQC) breaks RSA, DSA, ECDSA,
+and EdDSA via Shor's algorithm. Scientific datasets routinely retain value for
+30--100~years, so any signature placed today must be \emph{harvest-now,
+forge-later} resistant. NIST has standardized two post-quantum
+signature schemes for general use: ML-DSA (Module-Lattice DSA, formerly
+Dilithium)~\cite{fips204} and SLH-DSA (Stateless Hash-based DSA, formerly
+SPHINCS$^+$)~\cite{fips205}. Stateful hash-based schemes XMSS~\cite{rfc8391}
+and LMS~\cite{rfc8554} have smaller signatures but require careful state
+management, making them awkward for distributed scientific workflows. Hybrid
+classical~+~PQ signatures (Ed25519~+~ML-DSA-65 or Ed25519~+~SLH-DSA-128s) are
+the recommended transitional design. Post-quantum signature sizes
+(2--50\,KB) are 50--800$\times$ larger than classical signatures; this
+matters when many signatures must be stored, but is benign for a
+single-root-per-file scheme.
+
+\subsection{Hash chains and append-only transparency logs}
+
+Lamport one-time hash chains underpin a family of forward-secure authenticators
+in which each new value is committed by hashing it together with the previous
+one. Certificate Transparency~\cite{rfc6962,laurie2014certificate} extends
+this to a Merkle log of TLS certificate issuances, providing tamper-evident
+audit. Sigstore Rekor~\cite{newman2022sigstore} and
+Trillian~\cite{trillian} apply the same model to software-supply-chain
+artifacts. Append-only Merkle Mountain Ranges~\cite{mmr} amortize append cost
+better than balanced binary trees. Append-only logs are an excellent fit when
+the data model is itself an append-only stream (sensor logs, simulation
+checkpoints), but most HDF5 workloads also \emph{overwrite} chunks (e.g.,
+checkpoint/restart with correction of erroneous values). A pure append-only
+log model therefore does not capture HDF5 semantics on its own; we revisit
+append-only mode as an optional layer in Phase~3.
+
+\subsection{Hash trees and authenticated data structures}
+
+Hash trees (Merkle trees~\cite{merkle1987tree}) hash data in a balanced binary
+tree, producing a single root hash that commits to all leaves. Variants
+include Sparse Merkle Trees (SMT)~\cite{laurendeau2008smt} for keyed data with
+efficient non-membership proofs, Merkle--Patricia tries used by Ethereum
+state~\cite{ethereumyellow}, Merkle Mountain Ranges~\cite{mmr} for
+append-friendly logs, and Verkle trees~\cite{verkle} (KZG-based) for shorter
+multiproofs at the cost of a trusted setup. Tamassia~\cite{tamassia2003authenticated}
+formalized the broader class of \emph{authenticated data structures} (skip
+lists, B-trees, persistent dictionaries) in which an untrusted responder can
+prove query correctness against a digest published by a trusted source.
+Practical deployments include ZFS block-level Merkle-style
+checksumming~\cite{bonwick2003zfs}, Git's content-addressed Merkle DAG of
+blobs, trees, and commits~\cite{git_internals}, and IPFS~\cite{benet2014ipfs}.
+Hash trees provide $O(\log N)$ subset proofs, build at hash speed (no public-key
+operations), require no trusted setup, and become post-quantum simply by
+choosing a PQ-secure hash. Their natural unit of integrity (the leaf) maps
+cleanly onto HDF5 chunks. The major engineering questions are tree shape
+(balanced binary vs.\ SMT vs.\ Patricia), leaf encoding, and how to bind the
+tree to the underlying chunked container.
+
+\subsection{Cryptographic accumulators}
+
+RSA accumulators (Benaloh--de Mare~\cite{benaloh1993accumulator}) and
+bilinear-pairing accumulators (Nguyen~\cite{nguyen2005accumulator}) commit to a
+set with a constant-size digest and produce constant-size membership (and
+non-membership) witnesses. They appear attractive as a tree alternative.
+However, RSA accumulators require a trusted setup (a safe RSA modulus whose
+factorization is unknown), bilinear accumulators require a structured reference
+string typically generated by an MPC ceremony, neither variant is
+post-quantum, and accumulators are inherently \emph{set-based}: they have no
+notion of leaf order, complicating coverage proofs over ordered hyperslabs.
+Witness updates after dynamic insertions and deletions are also expensive.
+For a scientific dataset where order is intrinsic and trusted setup is
+unacceptable, accumulators are not a competitive option.
+
+\subsection{Vector and polynomial commitments}
+
+KZG~\cite{kate2010kzg} commits to a polynomial with a constant-size group
+element and produces constant-size openings; it underlies many succinct
+proof systems. Verkle trees~\cite{verkle} use KZG as the inner-node primitive
+for a high-fanout tree with very compact multiproofs. IPA / Bulletproofs
+\cite{bunz2018bulletproofs} avoid trusted setup but produce $O(\log N)$ proofs
+and have higher commit cost. FRI-based commitments underpin
+STARKs~\cite{bensasson2018stark} and are post-quantum but produce 10s of KB
+proofs. All pairing-based schemes (KZG, Verkle, Groth16~\cite{groth2016sn})
+are broken by Shor; all require an $O(N)$ multi-scalar multiplication to
+commit; none are competitive with hash trees for our setting at petabyte
+scale.
+
+\subsection{Zero-knowledge proofs of integrity}
+
+ZK-SNARKs (Groth16, PLONK, Marlin) and ZK-STARKs prove correctness of
+arbitrary computation, including correctness of an integrity claim, with
+minimal proof size. Proofs of Data Possession~\cite{ateniese2007pdp} and
+Proofs of Retrievability~\cite{juels2007por} let a verifier audit remote
+storage without retrieving full data, by sampling random blocks and checking
+authenticator tags. These primitives are most useful when (a)~one wishes to
+hide intermediate values from the verifier, or (b)~one wishes to perform
+\emph{spot-checks} rather than complete verification. Both situations are
+distinct from our problem (researchers want full guarantees over the data
+they actually read) and impose substantial proving cost. They remain candidates
+for orthogonal extensions (e.g., a sampling-based audit of an archive's
+overall integrity).
+
+\subsection{Trusted execution environments and remote attestation}
+
+Intel SGX~\cite{costan2016sgx}, AMD SEV-SNP, ARM TrustZone, and AWS Nitro
+Enclaves provide hardware-isolated execution with remote attestation; TPM
+2.0~\cite{tpm2} and Linux IMA/EVM~\cite{sailer2004ima} provide measured-boot
+integrity tied to platform-binding keys. dm-verity~\cite{dmverity} (Android
+read-only partitions) and fs-verity~\cite{fsverity} (Linux per-file Merkle
+trees enforced by the kernel) bind such measurements to filesystem objects.
+TEE-anchored memory integrity trees are also used inside the enclave itself.
+These mechanisms are powerful within a controlled platform but rely on
+recurrent vulnerability disclosures, vendor-specific attestation services,
+and the integrity of a particular hardware instance---assumptions
+incompatible with multi-decade archival of scientific data that may be
+read on platforms not yet built.
+
+\subsection{Filesystem and block-level integrity}
+
+ZFS~\cite{bonwick2003zfs} stores Fletcher4 or SHA-256 checksums for every
+block and arranges them in a Merkle-style hierarchy that enables silent-corruption
+detection and self-healing from redundant copies. Btrfs uses CRC-32C per
+block. dm-integrity (LUKS) provides per-block AEAD. dm-verity, fs-verity,
+and Linux IMA bind kernel-enforced Merkle hashes to read-time policy. These
+are excellent within their respective trust boundaries, but the integrity
+guarantee evaporates the moment data leaves the filesystem (e.g., copied to
+S3, archived to tape, transmitted across a WAN). For a portable, archive-grade
+guarantee, the integrity must travel \emph{with} the file rather than reside
+in the storage substrate.
+
+\subsection{Cloud object-store integrity primitives}
+
+Amazon S3 provides ETag (typically MD5, but multipart-derived) and additional
+checksum algorithms (CRC-32, CRC-32C, SHA-1, SHA-256) that the service computes
+and returns on PUT/GET~\cite{s3checksums}. S3 Object Lock, Glacier Vault Lock,
+and Azure Immutable Blob Storage provide WORM semantics. Server-side
+authenticators detect bit-rot and accidental corruption in transit, but do
+not establish provenance: the storage provider \emph{is} the trust root. A
+malicious or compromised provider can replace both the object and its
+checksum. End-to-end client-side authentication is therefore needed in
+addition to (not instead of) server-side checksums.
+
+\subsection{Blockchain and content-addressed systems}
+
+Bitcoin~\cite{nakamoto2008bitcoin} and Ethereum~\cite{ethereumyellow} provide
+globally consistent tamper-evident logs over decentralized infrastructure;
+both rely on Merkle trees as their internal data-integrity primitive. IPFS
+\cite{benet2014ipfs} and IPLD generalize content-addressed Merkle DAGs to a
+distributed filesystem. LOCKSS~\cite{maniatis2005lockss,rosenthal2003lockss}
+provides peer-to-peer digital preservation through redundant replicas with
+mutual integrity audits. These systems are powerful for distributed
+coordination, but for a closed-organization scientific archive their consensus
+overhead is unjustified, and the underlying integrity primitive (a Merkle DAG)
+can be inherited without inheriting the consensus layer.
+
+\subsection{Integrity in scientific and analytics data formats}
+
 HDF5's v2 metadata checksums (Jenkins lookup3) cover metadata pages but not
-raw data~\cite{folk1999hdf5}. Ovsyannikova et al.~\cite{ovsyannikova2023netcdf}
-have explored data integrity pipelines for NetCDF, though without sub-file
-granularity. Zarr~\cite{zarr2024} stores each chunk as an independent object
-(file or cloud blob), making per-chunk checksumming straightforward but
-lacking a hierarchical integrity structure that enables efficient partial
-verification. ASDF~\cite{greenfield2015asdf} (Advanced Scientific Data
-Format) includes per-block checksums but no tree-structured aggregation.
-None of these formats currently provides Merkle-tree-based partial
-verification, incremental signing, or tamper localization at sub-dataset
-granularity.
+raw chunk data~\cite{folk1999hdf5}; the fletcher32 chunk filter detects
+non-adversarial corruption. NetCDF builds on HDF5; Ovsyannikova
+et al.~\cite{ovsyannikova2023netcdf} have explored external data-integrity
+pipelines for NetCDF without sub-file granularity. Zarr v3~\cite{zarr2024}
+stores each chunk as an independent object and supports per-chunk checksum
+codecs (CRC-32C, SHA-256), but with no hierarchical aggregation that enables
+efficient subset coverage proofs. ASDF~\cite{greenfield2015asdf} stores
+per-block checksums without a tree. Apache Parquet~\cite{parquet} stores
+per-page CRC-32 checksums, also flat. FITS, GeoTIFF, and DICOM have weak or
+absent integrity primitives. None of the existing scientific or analytics
+formats provides Merkle-tree-based partial verification, incremental signing,
+or tamper localization at sub-dataset granularity, and none provides a
+post-quantum signing path.
 
-\paragraph{Why not alternative integrity structures?}
-Several alternatives to Merkle trees exist for dataset authentication, each
-with a disqualifying trade-off in this setting.
-\emph{Flat hash lists} (one hash per chunk, no aggregation) are the approach
-taken by Zarr and ASDF. They enable O(1) per-chunk verification but cannot
-produce a compact subset-coverage proof: to confirm that a delivered hyperslab
-is \emph{complete}, the receiver needs all $N$ chunk hashes to recompute
-which chunks were required---an O(N) communication cost that defeats the
-purpose of partial verification at petabyte scale.
-\emph{Cryptographic accumulators}~\cite{benaloh1993accumulator} (RSA or
-bilinear-map variants) achieve O(1) witness size but require a trusted setup
-(a safe RSA modulus or a structured reference string from an MPC ceremony),
-carry no post-quantum security, and are set-based rather than ordered, making
-hyperslab coverage certificates difficult to construct without additional
-machinery.
-\emph{KZG polynomial commitments}~\cite{kate2010kzg} and Verkle trees reduce
-multiproof size to a single constant-size group element but inherit the same
-trusted-setup requirement, rely on elliptic-curve pairings that are broken by
-quantum adversaries, and require O(N) multi-scalar multiplications to build the
-commitment---computationally infeasible for petabyte-scale scientific datasets.
-\emph{Per-chunk asymmetric signatures} (Ed25519 or ML-DSA-65 on every chunk)
-eliminate the need for a tree entirely but produce $64N$--$3300N$ bytes of
-signatures ($64\,\text{GB}$--$3.3\,\text{TB}$ at $N=10^9$ chunks) and require
-commensurate signing time.
-\emph{Per-chunk symmetric MACs} are fast and compact but require a shared
-secret key, providing no public verifiability for third-party auditors.
-A hash-based Merkle tree avoids all of these deficiencies: it requires no
-trusted setup, is post-quantum upgradeable by swapping the hash function,
-builds at memory-bandwidth speed, produces O($\log N$) subset proofs, and
-enables a coverage certificate with a single signed root hash.
-Table~\ref{tab:integrity-comparison} summarizes the trade-offs.
+\subsection{Provenance, lineage, and freshness}
+
+The W3C PROV data model~\cite{w3cprov} and systems such as
+ProvONE~\cite{moreau2008provone}, OpenLineage~\cite{openlineage}, and
+PrIMe~\cite{miles2007prov} provide general-purpose provenance tracking for
+scientific workflows. These systems track \emph{derivation history} (which
+computations produced a dataset), which is complementary to but distinct
+from \emph{content integrity} (whether the bytes have been modified since
+signing). RFC 3161 trusted timestamping~\cite{rfc3161} and transparency-log
+inclusion proofs~\cite{trillian,laurie2014certificate} provide \emph{freshness}
+guarantees against rollback. These are layered on top of an underlying
+content-integrity primitive rather than replacements for it: the present work
+focuses on the latter, with provenance and freshness retained as integration
+points (\S\ref{sec:limitations}).
+
+\paragraph{Summary.}
+The survey identifies a small number of mechanism classes that are, in
+isolation, viable for sub-dataset content authentication of long-lived
+scientific data: cryptographic hashes (no partial verification), per-chunk
+MACs or AEAD (no public verifiability), per-chunk signatures (storage and
+compute prohibitive), hash trees with a signed root (subset proofs, no trusted
+setup, PQ-upgradeable, builds at hash speed), accumulators and polynomial
+commitments (trusted setup or post-quantum-broken or both), and
+filesystem/cloud-store mechanisms (not portable). \S\ref{sec:selection}
+formalizes the requirements and selects from this shortlist.
+
+%% ============================================================================
+\section{Requirements and Selection}
+\label{sec:selection}
+
+\subsection{Requirements}
+\label{sec:requirements}
+
+We translate the problem statement of \S\ref{sec:intro} into ten concrete
+requirements that any candidate primitive must meet for the HDF5 setting:
+
+\begin{description}[nosep]
+  \item[R1: Sub-dataset partial verification.]
+    A reader of an arbitrary hyperslab consisting of $k$ chunks out of $N$
+    must be able to verify those $k$ chunks at cost $O(k\log N)$ or better,
+    without reading or hashing the remaining $N-k$ chunks. (Petabyte-scale
+    rehashing is infeasible.)
+  \item[R2: Incremental extension.]
+    Appending new chunks to a resizable dataset must not require re-signing
+    or re-hashing existing chunks; the cost must be $O(\log N)$ or better
+    per appended chunk.
+  \item[R3: In-place chunk update.]
+    HDF5 permits any chunk in a dataset to be overwritten (e.g., during
+    checkpoint/restart, or correction of erroneous values). Updating chunk
+    $k$ must cost $O(\log N)$ in both data-plane and signing-plane work,
+    not $O(N)$.
+  \item[R4: Tamper localization.]
+    On a verification failure, the mechanism must identify which specific
+    chunks (or a tight superset) were modified, in $O(\log N)$ work, rather
+    than only signaling that \emph{some} corruption occurred.
+  \item[R5: Verifiable subset extraction.]
+    A recipient of a hyperslab plus a small auxiliary proof must be able to
+    cryptographically verify that the hyperslab is a true subset of the
+    signed parent dataset, without access to the rest of the dataset.
+  \item[R6: Public verifiability.]
+    Verification must require only the original signer's public key, not a
+    shared secret, so that third-party auditors, archive mirrors, and
+    downstream collaborators can verify independently.
+  \item[R7: Compact subset proof.]
+    The auxiliary proof bundled with a hyperslab must be sublinear in $N$
+    (target: $O(k\log N)$ or smaller), so that bandwidth is not dominated
+    by the proof itself.
+  \item[R8: No trusted setup.]
+    The construction must not require a trusted-setup ceremony or trapdoored
+    parameters, since open scientific use cannot establish or audit such
+    ceremonies.
+  \item[R9: Post-quantum upgrade path.]
+    The integrity guarantee must remain valid against a future
+    cryptographically relevant quantum adversary, either by being inherently
+    PQ-secure or by admitting a clean upgrade (e.g., swapping the hash or
+    signature algorithm) without re-signing existing data.
+  \item[R10: HPC-feasible build cost.]
+    Initial commitment over a petabyte-scale dataset must be feasible at
+    memory-bandwidth speeds on commodity HPC hardware, i.e., a small
+    constant multiple of a single linear pass over the data.
+\end{description}
+
+\subsection{Comparison of candidate primitives}
+
+Table~\ref{tab:integrity-comparison} maps the seven candidate classes
+identified in the survey against these ten requirements.
 
 \begin{table}[h]
 \centering
 \small
-\setlength{\tabcolsep}{5pt}
-\begin{tabular}{lcccc>{\columncolor{blue!12}}c}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccccccc>{\columncolor{blue!12}}c}
 \toprule
-\textbf{Property}
-  & \textbf{\shortstack{Flat\\hash list}}
-  & \textbf{\shortstack{Crypto\\accumulator}}
+\textbf{Requirement}
+  & \textbf{\shortstack{Flat\\hash}}
+  & \textbf{\shortstack{Per-chk\\MAC}}
+  & \textbf{\shortstack{Per-chk\\sig.}}
+  & \textbf{\shortstack{RSA\\acc.}}
   & \textbf{\shortstack{KZG /\\Verkle}}
-  & \textbf{\shortstack{Per-chunk\\signature}}
+  & \textbf{\shortstack{ZKP /\\PoR}}
+  & \textbf{\shortstack{TEE /\\fs-verity}}
   & \textbf{\shortstack{Merkle\\tree}} \\
 \midrule
-No trusted setup          & \checkmark & $\times$ & $\times$ & \checkmark & \checkmark \\
-Post-quantum ready        & \checkmark & $\times$ & $\times$ & $\dagger$  & \checkmark \\
-$O(\log N)$ subset proof  & $\times$   & $O(1)$   & $O(1)$   & $\times$   & \checkmark \\
-Coverage certificate      & $\times$   & complex  & complex  & $\times$   & \checkmark \\
-Builds at hash speed      & \checkmark & $\times$ & $\times$ & $\times$   & \checkmark \\
-HPC tooling exists        & \checkmark & $\times$ & $\times$ & \checkmark & \checkmark \\
-Single root to sign       & $\times$   & \checkmark & \checkmark & ---     & \checkmark \\
+R1 partial verification & $\times$   & \checkmark & \checkmark & \checkmark & \checkmark & sample-only & \checkmark & \checkmark \\
+R2 incremental extend   & \checkmark & \checkmark & \checkmark & costly     & costly     & costly      & \checkmark & \checkmark \\
+R3 in-place update      & $\times$   & \checkmark & \checkmark & costly     & costly     & costly      & \checkmark & \checkmark \\
+R4 tamper localization  & $\times$   & \checkmark & \checkmark & $\times$   & partial    & $\times$    & \checkmark & \checkmark \\
+R5 subset extraction    & $\times$   & $\times$   & $\times$   & complex    & \checkmark & \checkmark  & $\times$   & \checkmark \\
+R6 public verifiability & \checkmark & $\times$   & \checkmark & \checkmark & \checkmark & \checkmark  & vendor     & \checkmark \\
+R7 compact subset proof & $\times$   & $\times$   & $\times$   & $O(1)$     & $O(1)$     & $O(1)$      & ---        & $O(\log N)$ \\
+R8 no trusted setup     & \checkmark & \checkmark & \checkmark & $\times$   & $\times$   & varies      & vendor     & \checkmark \\
+R9 PQ upgrade path      & \checkmark & \checkmark & $\dagger$  & $\times$   & $\times$   & STARK only  & vendor     & \checkmark \\
+R10 HPC-feasible build  & \checkmark & \checkmark & costly     & $\times$   & $\times$   & $\times$    & \checkmark & \checkmark \\
 \bottomrule
 \end{tabular}
-\caption{Comparison of dataset authentication approaches.
-  $\dagger$~Requires replacing classical scheme with ML-DSA-65.}
+\caption{Candidate primitives against the requirements of
+\S\ref{sec:requirements}. ``vendor'' = depends on platform vendor; ``costly''
+= achievable but with non-trivial overhead; ``sample-only'' = provides
+sampling-based assurance rather than complete verification.
+$\dagger$~Per-chunk signatures upgrade to PQ by replacing the scheme but
+remain storage-prohibitive.}
 \label{tab:integrity-comparison}
 \end{table}
 
-\paragraph{Authenticated data structures.}
-Tamassia~\cite{tamassia2003authenticated} formalized authenticated data
-structures, where a trusted source publishes a digest and an untrusted
-responder proves query correctness against that digest.
-Li et al.~\cite{li2021fastore} explored authenticated storage using small
-trusted hardware enclaves. Our Merkle tree over HDF5 chunks is an instance of
-an authenticated data structure where the signed root serves as the digest and
-Merkle proofs serve as authentication paths, adapted to the specific access
-patterns and I/O characteristics of scientific data.
+\subsection{Selection: hash tree with a signed root}
+\label{sec:selection-conclusion}
 
-\paragraph{Data provenance.}
-The W3C PROV data model~\cite{w3cprov} and systems such as
-ProvONE~\cite{moreau2008provone} provide general-purpose provenance tracking
-for scientific workflows. These systems are complementary to our work: they
-track \emph{derivation history} (which computations produced a dataset), while
-our Merkle tree tracks \emph{content integrity} (whether the bytes have been
-modified since signing). The two could be combined: a Merkle root hash serves
-as a content-stable identifier that provenance records can reference.
+A hash tree (binary or sparse Merkle tree) over chunk hashes, with the root
+signed by a hybrid classical~+~PQ signature, is the only candidate that
+satisfies R1--R10 simultaneously:
 
-\paragraph{Asynchronous I/O for HDF5.}
-Tang et al.~\cite{tang2022async} demonstrated transparent asynchronous I/O for
-HDF5 using background threads, achieving significant latency hiding for
-metadata operations. This work is relevant to eventual STS integration of the
-Merkle-tree provenance operations, but the STS prototype itself is outside the
-scope of this proposal.
+\begin{itemize}[nosep]
+  \item Subset proofs of size $O(k\log N)$ (R5, R7) come for free from the
+    tree structure; subset extraction (R5) reduces to a Merkle multiproof.
+  \item Tamper localization (R4) walks from root to leaves in $O(\log N)$.
+  \item In-place update (R3) and append (R2) recompute only the
+    $O(\log N)$ hashes on the affected root path, not the whole tree.
+  \item No trusted setup (R8); a hash tree is post-quantum simply by choosing
+    a PQ-secure hash (R9) and binding the root with a PQ signature.
+  \item Build cost (R10) is one hash per chunk plus $N-1$ pair hashes for
+    internal nodes, executable at memory-bandwidth speed on existing HPC
+    hardware (SHA-NI, AVX-512, NEON).
+  \item Public verifiability (R6) is provided by the asymmetric root
+    signature.
+\end{itemize}
+
+The competitor primitives all fail at least one core requirement. Per-chunk
+MACs and AEAD lose R6 and R7. Per-chunk signatures lose R7 and R10. Flat
+hashing loses R1, R3, R4, R5. RSA accumulators and bilinear/KZG schemes lose
+R8 and R9 and have no natural ordered-coverage proof (weakening R5).
+ZK-SNARKs, PoR, and PDP either trade completeness for sampling (weakening R1
+and R4) or carry trusted-setup or pairing-based PQ liabilities (R8, R9).
+TEE/fs-verity loses portability across the multi-decade archival horizon and
+binds verification to specific vendors and platforms.
+
+The remainder of this document therefore designs, implements, and evaluates a
+Merkle-tree integrity scheme tailored to HDF5's chunked storage and hyperslab
+access model. We retain the surveyed primitives as composable layers where
+they fit (AEAD inside the Encrypt-then-MAC filter pipeline,
+\S\ref{sec:filter-order}; classical~+~PQ hybrid signatures at the root,
+\S\ref{sec:pq-hybrid}; transparency-log publication of signed roots as a
+freshness layer, \S\ref{sec:signing}; W3C PROV linkage as a complementary
+provenance graph, \S\ref{sec:limitations}).
 
 %% ============================================================================
 \section{Merkle-Tree Provenance}
@@ -1819,20 +2156,25 @@ to 150~words. Draft early; revise after results to match headline numbers.
 
 \bigskip
 %% §2
-\noindent\textcolor{blue!60!black}{\textbf{\S2\quad Background \& Related Work \hfill($\sim$1.5\,pp)}}
+\noindent\textcolor{blue!60!black}{\textbf{\S2\quad Background, Survey, \& Selection \hfill($\sim$2.5\,pp)}}
 \par\noindent\rule{\linewidth}{0.4pt}
-\mapsec{Proposal \S2}{---}{---}
+\mapsec{Proposal \S2--\S\ref{sec:selection}}{---}{---}
 
 \noindent\textbf{Content:} HDF5 chunked storage, filter pipeline, RustyHDF5
-architecture. Related work: Merkle trees in storage (ZFS, Git, IPFS, Certificate
-Transparency), scientific format integrity (NetCDF, Zarr, ASDF), authenticated data
-structures (Tamassia), provenance (W3C PROV), PQ signatures (FIPS~204/205). Brief note
-on Tang et al.\ async I/O as future STS context.
+architecture. Survey of tamper-detection primitives: error-detection codes,
+cryptographic hashes, MAC/AEAD, classical and post-quantum signatures, hash
+trees and authenticated data structures (ZFS, Git, IPFS, CT, Sigstore, Tamassia),
+accumulators (RSA, bilinear), polynomial/vector commitments (KZG, Verkle, IPA,
+STARK), ZKP and PoR/PDP, TEE/fs-verity, cloud-store integrity, blockchain,
+scientific-format integrity (NetCDF, Zarr, ASDF, Parquet), provenance (W3C PROV).
+Then: requirements R1--R10 derived from HDF5 access patterns and archival
+horizon; comparison table; selection of Merkle-tree-with-signed-root.
 
-\noindent\textbf{Writing strategy:} Sharpen differentiation --- what does this do that
-ZFS/IPFS/Git/Zarr-v3 don't? Answer: chunk-aligned trees with HDF5 hyperslab-aware
-partial verification, verifiable subset extraction, and PQ-ready signed roots. Target
-20$+$ references.
+\noindent\textbf{Writing strategy:} The survey~$\rightarrow$~requirements
+$\rightarrow$~selection chain is what justifies the rest of the paper. Sharpen
+differentiation --- what does this do that ZFS/IPFS/Git/Zarr-v3 don't? Answer:
+chunk-aligned trees with HDF5 hyperslab-aware partial verification, verifiable
+subset extraction, and PQ-ready signed roots. Target 30$+$ references.
 
 \bigskip
 %% §3
