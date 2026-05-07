@@ -49,7 +49,7 @@
 \title{%
   \textbf{Tamper Detection and Data Integrity for Self-Describing Scientific Data}\\[0.5em]
   \large A Research Plan for the S2-D2 Framework\\
-  Using RustyHDF5 as an Experimental Platform
+  Using ClawHDF5 as an Experimental Platform
 }
 
 \author{
@@ -82,8 +82,10 @@ tamper localization, in-place and incremental update support, verifiable subset
 extraction, public verifiability, no trusted setup, post-quantum upgradeability,
 and HPC-feasible build cost). From this comparative analysis we conclude that
 a Merkle-tree provenance scheme is the only primitive that simultaneously
-satisfies all of these requirements at terabyte scale, and we then design,
-implement, and evaluate such a scheme in RustyHDF5~\cite{rustyhdf5}. Beyond
+satisfies all of these requirements \emph{without a trusted-setup ceremony and
+without a pairing- or factoring-based primitive that Shor's algorithm breaks},
+and we then design,
+implement, and evaluate such a scheme in ClawHDF5~\cite{clawhdf5}. Beyond
 the systems architecture (hybrid root-attribute plus chunked companion
 dataset, Encrypt-then-MAC filter-pipeline ordering, version-counter nonce
 derivation for safe in-place updates), the work targets three publishable
@@ -94,7 +96,7 @@ signing} scheme (Ed25519~$+$~ML-DSA-65) measured at HDF5 scale, addressing the
 50-year archival timescales typical of scientific data; and (iii)~a
 \emph{symbolic security analysis} (Tamarin or game-based) of the
 EtM~$+$~version-counter~$+$~signed-root construction, evaluated against a
-directed-adversary red-team study on real scientific datasets. The RustyHDF5
+white-box adversarial red-team study on real scientific datasets. The ClawHDF5
 pure-Rust HDF5 implementation serves as the experimental platform, enabling
 rapid prototyping before design decisions are committed to the C~HDF5 library.
 \end{abstract}
@@ -117,7 +119,8 @@ runtime framework, including the Security Task Scheduler, to execute security
 operations with minimal performance overhead. This proposal contributes
 primarily to Task~3, with a secondary connection to Task~2 through
 shared trust infrastructure (the KeyStore and \texttt{h5sign} signing tool
-developed under Task~2's plugin-signature work, PR~\#6198).
+developed under Task~2's plugin-signature work,
+\href{https://github.com/HDFGroup/hdf5/pull/6198}{HDFGroup/hdf5\#6198}).
 
 \paragraph{The problem.}
 Scientific HDF5 datasets routinely reach tens of gigabytes to tens of
@@ -140,11 +143,11 @@ a granularity, and none provide cryptographic authentication of raw data. The
 file format's v2 metadata checksums (Jenkins lookup3) protect individual
 metadata pages but do not cover raw chunk data. The fletcher32 chunk filter
 detects random bit errors but is a non-cryptographic CRC easily defeated by
-an adversary. RustyHDF5 includes a basic provenance feature that computes a
+an adversary. ClawHDF5 includes a basic provenance feature that computes a
 single SHA-256 hash per dataset, but this requires rehashing the entire
 dataset to verify integrity---infeasible for terabyte-scale data where a
 researcher may access only a small hyperslab. Neither the C~HDF5 library nor
-RustyHDF5 currently provides a mechanism for \emph{partial verification}
+ClawHDF5 currently provides a mechanism for \emph{partial verification}
 (verifying a subset of chunks without touching the rest), \emph{incremental
 signing} (extending or updating a dataset without invalidating existing
 signatures), \emph{tamper localization} (identifying which specific chunks
@@ -168,7 +171,7 @@ requirements at terabyte scale, and we devote the remainder of the document
 a construction.
 
 \paragraph{Experimental platform.}
-This work uses RustyHDF5~\cite{rustyhdf5}---a pure-Rust HDF5 implementation
+This work uses ClawHDF5~\cite{clawhdf5}---a pure-Rust HDF5 implementation
 with zero C dependencies---as an experimental platform. The choice is
 motivated by three factors: (1)~its modular crate architecture (separate
 crates for format parsing, I/O, filters, SIMD acceleration, and GPU compute)
@@ -181,7 +184,7 @@ filters---including encryption and Merkle hashing---can be inserted without
 modifying the core I/O path.
 
 \paragraph{Scope clarification.}
-RustyHDF5 does not currently include encryption or cryptographic signing
+ClawHDF5 does not currently include encryption or cryptographic signing
 capabilities. Its provenance feature stores per-dataset SHA-256 content hashes
 and creator metadata as HDF5 attributes, but this is limited to flat
 whole-dataset hashing. The Merkle-tree provenance and the encryption filters
@@ -208,32 +211,32 @@ enables partial I/O, compression, and extensibility (resizable dimensions).
 While chunked storage is common, other dataset representations are discussed in
 Section \S\ref{sec:limitations}.
 
-\subsection{RustyHDF5 Architecture}
+\subsection{ClawHDF5 Architecture}
 
-RustyHDF5 is organized as 11 Rust crates in a layered architecture:
+ClawHDF5 is organized as the following Rust crates in a layered architecture:
 
 \begin{itemize}[nosep]
-  \item \texttt{rustyhdf5-format}: \texttt{no\_std}-compatible binary format parser/writer
-  \item \texttt{rustyhdf5-io}: I/O backends (buffered, mmap, async, VOL, sub-filing)
-  \item \texttt{rustyhdf5-filters}: Filter pipeline (deflate, shuffle, fletcher32)
-  \item \texttt{rustyhdf5-accel}: SIMD acceleration (NEON, AVX2, AVX-512)
-  \item \texttt{rustyhdf5-gpu}: GPU compute via wgpu~\cite{wgpu}
-  \item \texttt{rustyhdf5}: High-level ergonomic API
+  \item \texttt{clawhdf5-format}: \texttt{no\_std}-compatible binary format parser/writer
+  \item \texttt{clawhdf5-io}: I/O backends (buffered, mmap, async, VOL, sub-filing)
+  \item \texttt{clawhdf5-filters}: Filter pipeline (deflate, shuffle, fletcher32)
+  \item \texttt{clawhdf5-accel}: SIMD acceleration (NEON, AVX2, AVX-512)
+  \item \texttt{clawhdf5-gpu}: GPU compute via wgpu~\cite{wgpu}
+  \item \texttt{clawhdf5}: High-level ergonomic API
 \end{itemize}
 
-\noindent RustyHDF5 includes a basic provenance feature in
-\texttt{rustyhdf5-format} that stores per-dataset SHA-256 content hashes,
+\noindent ClawHDF5 includes a basic provenance feature in
+\texttt{clawhdf5-format} that stores per-dataset SHA-256 content hashes,
 creator identity, timestamps, and optional source identifiers as HDF5
 attributes. Integrity verification (\texttt{verify\_dataset()}) rehashes the
-entire dataset and compares against the stored hash. Notably, RustyHDF5 does
+entire dataset and compares against the stored hash. Notably, ClawHDF5 does
 \emph{not} currently include encryption, HMAC, or digital signature support in
-its filter pipeline---the \texttt{rustyhdf5-filters} crate provides only
+its filter pipeline---the \texttt{clawhdf5-filters} crate provides only
 deflate, shuffle, and fletcher32. Cryptographic operations will therefore be
 implemented as new filters and crate modules as part of this research.
 
 \subsection{S2-D2 Framework Architecture}
 
-The S2-D2 runtime (Figure~5 of the proposal) consists of three components:
+The S2-D2 runtime consists of three components:
 
 \begin{enumerate}[nosep]
   \item \textbf{Data Protection Factory (DPF)}: A registry of encryption, masking,
@@ -279,11 +282,13 @@ High-performance environments increasingly adopt T10-PI (SCSI Protection
 Information, also known as T10-DIF)~\cite{t10dif} for end-to-end,
 hardware-accelerated integrity checking from the compute node down to the
 physical drive. The HDF5 fletcher32 chunk filter is in this family. However,
-all listed codes are linear over $\mathrm{GF}(2)$ (the binary field
-$\{0,1\}$ under XOR arithmetic) and can be inverted in
-closed form by an adversary: given a desired alteration, the attacker uses
-elementary linear algebra over the binary field to compute
-a matching tail correction that preserves the checksum---no brute-force search is required. They therefore detect
+all listed codes are invertible in closed form by an adversary.
+CRC-family codes are linear over $\mathrm{GF}(2)$ (XOR arithmetic); an attacker
+uses elementary linear algebra over the binary field to compute a tail correction
+preserving the checksum. Fletcher-32 and Adler-32 are linear over a small
+modulus ($2^{16}-1$ and $65521$ respectively), which similarly admits a
+closed-form correction---no brute-force search is required in either case.
+They therefore detect
 \emph{accidental} corruption only, not \emph{adversarial} tampering, and
 cannot serve as the primary integrity primitive for an authentication scheme.
 
@@ -299,7 +304,7 @@ KangarooTwelve uses Keccak-$p$ with a parallel sponge for similar performance.
 SHA-1 is broken against collision attacks~\cite{stevens2017sha1} and must not
 be used for new schemes. A single hash of a multi-terabyte dataset establishes
 authenticity of the whole, but verification requires re-reading every byte---no
-sub-dataset partial verification is possible from a flat hash. RustyHDF5's
+sub-dataset partial verification is possible from a flat hash. ClawHDF5's
 existing flat-SHA-256 provenance feature is in this category.
 
 \subsection{Symmetric-key authentication: MACs, AEAD, and homomorphic hashing}
@@ -622,8 +627,9 @@ requirements that any candidate primitive must meet for the HDF5 setting:
 
 \subsection{Comparison of candidate primitives}
 
-Table~\ref{tab:integrity-comparison} maps the seven candidate classes
-identified in the survey against these ten requirements.
+Table~\ref{tab:integrity-comparison} maps the seven alternative classes plus
+Merkle tree (eight columns total) identified in the survey against these ten
+requirements.
 
 \begin{table}[h]
 \centering
@@ -677,7 +683,8 @@ $^g$~Per-chunk classical signatures: 64\,B/chunk; ML-DSA-65 raises this to
 $^h$~ML-DSA-65 signing at $\sim$1\,ms/chunk $\times$ $10^7$ chunks
 $\approx$ 3\,CPU-hours.
 $^i$~Merkle baseline: $\sim$30\,s assumes a parallel HPC leaf-hashing pass
-(${\sim}200$ cores $\times$ 1.5\,GB/s $\approx$ 300\,GB/s aggregate for 10\,TB);
+across ${\sim}200$ cores of an HPC partition (${\sim}200 \times 1.5$\,GB/s $\approx$ 300\,GB/s
+aggregate via a parallel filesystem for 10\,TB);
 tree aggregation over pre-computed leaf hashes adds $<1$\,s on a single core.
 $\dagger$~Per-chunk signatures upgrade to PQ by swapping the scheme but
 remain storage-prohibitive (33\,GB/dataset at $N=10^7$).}
@@ -697,16 +704,17 @@ R1--R10 \emph{without trusted setup or post-quantum liability}:
     multiproof, and coverage to a sibling-witness completeness check.
   \item Tamper localization (R4) walks from root to leaves in $O(\log N)$.
   \item In-place update (R3) and append (R2) recompute only the
-    $O(\log N)$ hashes on the affected root path---$\sim$30 SHA-256
-    invocations ($\sim$3\,$\mu$s on SHA-NI) per update at $N=10^7$.
+    $O(\log N)$ hashes on the affected root path---$\sim$24 SHA-256
+    invocations ($\lceil\log_2 10^7\rceil = 24$; $\sim$3\,$\mu$s on SHA-NI)
+    per update at $N=10^7$.
   \item No trusted setup (R8); the construction is post-quantum simply by
     choosing a PQ-secure hash (R9) and binding the root with a PQ signature.
   \item Build cost (R10) is one hash per chunk plus $N-1$ pair hashes for
     internal nodes. At $N=10^7$ chunks (10\,TB), leaf hashing completes in
-    $\sim$30\,s on a typical HPC node (parallel I/O across ${\sim}200$ cores
-    at 1.5\,GB/s); tree aggregation over pre-computed leaf hashes adds
-    $<1$\,s on a single core---two or more orders of magnitude below the
-    algebraic alternatives.
+    $\sim$30\,s across ${\sim}200$ cores of an HPC partition (1.5\,GB/s per
+    core, $\sim$300\,GB/s aggregate via a parallel filesystem); tree
+    aggregation over pre-computed leaf hashes adds $<1$\,s on a single
+    core---two or more orders of magnitude below the algebraic alternatives.
   \item Public verifiability (R6) is provided by the asymmetric root
     signature.
 \end{itemize}
@@ -726,12 +734,13 @@ re-sign 30 years of NOAA records'' is the right design choice.
 
 The most plausible \emph{hybrid} is \textbf{BLS-aggregated per-chunk
 signatures}, which collapse $N$ per-chunk signatures into a single 48-byte
-aggregate and would otherwise satisfy R1--R6, R10. BLS is disqualified by R8
-(BLS12-381 uses a structured reference setup) and R9 (pairings are not
-post-quantum). Aggregate verification still requires the verifier to combine
-$N$ public-key/message pairs to recompute the aggregate, and R5b (coverage
-against the parent dataset) is not provided without an additional layer that
-again reduces to a hash tree.
+aggregate and would otherwise satisfy R1--R6, R10. BLS aggregate signatures
+do not require a trusted setup ceremony (unlike KZG), but are disqualified by
+R9: BLS12-381 pairings are broken by Shor's algorithm, eliminating any
+post-quantum upgrade path. Furthermore, R5b (coverage proof against the
+parent dataset) is not provided without an additional layer---a signed manifest
+of which chunks were delivered---that again reduces to a hash tree and provides
+no benefit over a Merkle root directly.
 
 A second plausible hybrid is \textbf{per-chunk PQ signatures} (e.g.,
 ML-DSA-65 per chunk) with no aggregation. This satisfies R6, R8, R9 but
@@ -823,9 +832,10 @@ and privacy extensions (T6--T8):
     dataset) to force a fail-open downgrade to unauthenticated access, or
     alters the unencrypted algorithm identifiers in the root attribute to
     force the verifier to use a weaker cryptographic primitive (e.g.,
-    substituting \texttt{sha1} for \texttt{blake3}).  Unlike T1--T3, no
-    signature forgery is required; the attack exploits verifier leniency
-    toward missing or downgraded metadata.
+    substituting \texttt{sha256-truncated-128} for \texttt{blake3}, or
+    downgrading the AEAD from \texttt{AES-256-GCM} to \texttt{AES-128-GCM}).
+    Unlike T1--T3, no signature forgery is required; the attack exploits
+    verifier leniency toward missing or downgraded metadata.
   \item[T7: Verification resource exhaustion (DoS).]
     An adversary crafts a malformed companion dataset, manipulated
     chunk-grid metadata, or cyclic proof paths designed to force the
@@ -852,8 +862,14 @@ and optional Sigstore publication provides a public, append-only audit trail
 for T3. To defend against T4, the signed root attribute includes a
 \textbf{monotonic dataset version number} that is incremented on every write
 (append or in-place update), plus a high-resolution timestamp. A verifier can
-reject a file whose version number is lower than a previously observed version,
-and Sigstore transparency log publication (if enabled) provides an independent,
+reject a file whose version number is lower than a previously observed version.
+Note that this defense requires the verifier to have a \emph{prior observation}
+of the dataset; a first-time recipient cannot detect rollback from version
+information alone. An external cryptographic timestamp (TSA, RFC~3161) or
+Sigstore transparency log publication is therefore necessary for verifiers
+who may be receiving the dataset for the first time---this is why the
+TSA stretch goal (\S\ref{sec:signing}) is architecturally significant.
+Sigstore transparency log publication (if enabled) also provides an independent,
 tamper-evident temporal record. Importantly, the companion dataset storing the
 full Merkle tree must itself be protected---we address this via an integrity
 hash of the serialized companion included in the signed root attribute
@@ -890,7 +906,8 @@ scientific data use case requires integrity \emph{without} encryption:
     tamper detection---a corrupted simulation checkpoint or a silently modified
     climate record can invalidate months of downstream analysis. The Merkle
     tree provides chunk-level integrity using only hashing (SHA-256 with SHA-NI
-    achieves $>$10\,GB/s), with no key management, no nonce derivation, and no
+    achieves $\sim$1.5--3\,GB/s per core; aggregate throughput scales linearly
+    with core count), with no key management, no nonce derivation, and no
     encryption overhead.
   \item[Whole-dataset verification without decryption.]
     Even for encrypted datasets, AEAD per-chunk authentication answers only
@@ -993,7 +1010,7 @@ are covered by the Ed25519 signature.
 
 \paragraph{Parallel Merkle tree construction.}
 In HPC workflows, many compute ranks may write to distinct chunks of the same
-dataset simultaneously via MPI-IO (in C~HDF5) or rayon (in RustyHDF5). If each
+dataset simultaneously via MPI-IO (in C~HDF5) or rayon (in ClawHDF5). If each
 writer independently tries to update the $O(\log N)$ path from its leaf to the
 root in the companion dataset, the internal tree nodes become contention
 hotspots---particularly near the root. We address this with a
@@ -1130,16 +1147,19 @@ performance--compliance--standards space:
     hardware acceleration. BLAKE3's built-in tree hashing mode could eliminate
     the need for an external Merkle structure for the per-dataset case.
   \item \textbf{KangarooTwelve}~\cite{k12}: A SHA-3-family parallel hash
-    derived from \texttt{Keccak-p}, included to give FIPS-required deployments
-    a parallel option without the SHA-256 throughput ceiling. Its 12-round
+    derived from \texttt{Keccak-p}, included as a parallel alternative in
+    environments where SHA-256 throughput is the bottleneck. Note that K12 is
+    \emph{not} FIPS-approved (only SHA-3-256/384/512 and SHAKE128/256 are FIPS
+    202 listed); it is therefore limited to non-FIPS deployments. Its 12-round
     permutation provides a generous security margin while exploiting SIMD and
     multi-core parallelism on long inputs.
 \end{itemize}
 
 \noindent The research will benchmark all three on representative scientific
-data to determine the performance--compliance tradeoff (SHA-256 for legacy
-FIPS environments, KangarooTwelve for FIPS-aligned parallel deployments,
-BLAKE3 for maximum throughput where compliance is unconstrained).
+data to determine the performance--compliance tradeoff (SHA-256 for FIPS-required
+environments, KangarooTwelve for SHA-3-family parallel deployments where FIPS
+is not a constraint, BLAKE3 for maximum throughput where compliance is
+unconstrained).
 
 \subsection{Verifiable Subset Extraction}
 \label{sec:subset}
@@ -1152,7 +1172,13 @@ flat per-dataset hash cannot answer this question without delivering the
 entire dataset; per-chunk AEAD authentication can verify that each delivered
 chunk is intact \emph{individually}, but cannot prove that the delivered set
 constitutes the requested hyperslab and that no requested chunks were silently
-omitted, substituted from a different version, or reordered.
+omitted, substituted from a different version, or reordered. Note that raw
+Merkle inclusion proofs alone also cannot prove coverage: they establish
+\emph{membership} (this chunk is in the tree), not \emph{completeness} (all
+required chunks were delivered). Coverage is a property of the
+\emph{grid hash~$+$~Merkle path} combination described below: the Merkle path
+anchors the trusted chunk-grid parameters from the object header, which then
+determine exactly which chunks must be present for a given hyperslab request.
 
 This proposal elevates \emph{verifiable subset extraction} to a
 first-class research contribution. We define:
@@ -1169,15 +1195,20 @@ first-class research contribution. We define:
     (enforced via the per-chunk version counter, \S\ref{sec:nonce}).
 \end{description}
 
-The proof~$\pi$ has three components: (a)~the union of Merkle witnesses for
-the chunks in~$\mathcal{C}$, with shared internal nodes deduplicated;
-(b)~a \emph{coverage certificate} consisting of the dataset's serialized
-object header (datatype, dataspace dimensionality, chunk grid parameters,
-and relevant attributes) together with its Merkle path to the file-level
-signed root, allowing the recipient to independently verify the trusted grid
-parameters and then recompute which chunks \emph{should} have been delivered
-for hyperslab~$H$; and (c)~the per-chunk version counters, which are bound
-into each leaf hash and therefore covered by the witnesses.
+The proof~$\pi$ has three components:
+\begin{description}[nosep]
+  \item[(a) Merkle witnesses.] The union of Merkle inclusion witnesses for
+    every chunk in~$\mathcal{C}$, with shared internal nodes deduplicated.
+  \item[(b) Coverage certificate.] The dataset's serialized object header
+    (datatype, dataspace dimensionality, chunk grid parameters, and relevant
+    attributes) together with its Merkle path to the file-level signed root.
+    This allows the recipient to independently verify the trusted chunk-grid
+    parameters (via the Merkle path) and then recompute which chunk indices
+    \emph{must} have been delivered for hyperslab~$H$.
+  \item[(c) Per-chunk version counters.] One 64-bit version counter per chunk
+    in~$\mathcal{C}$, bound into each leaf hash and therefore covered by the
+    witnesses in (a).
+\end{description}
 
 The object header is typically only a few kilobytes, so including it in~$\pi$
 is negligible relative to the data payload. The verification workflow is:
@@ -1220,12 +1251,18 @@ proof size scales with the boundary surface area of the requested block,
 not its volume, yielding $O\!\left(\mathrm{SurfaceArea}(m_1,\dots,m_r)\cdot\log N\right)$
 rather than $O\!\left(\mathrm{Volume}\cdot\log N\right)$,
 for axis-aligned hyperslabs under an ideal tree layout (where
-$\mathrm{SurfaceArea}(m_1,\dots,m_r)=\sum_i \prod_{j\neq i} m_j$). For
+$\mathrm{SurfaceArea}(m_1,\dots,m_r)=\sum_i \prod_{j\neq i} m_j$).
+\textbf{Important caveat:} the companion dataset stores the Merkle tree in
+a 1D linearization of the chunk grid (row-major order by default). A
+contiguous hyperslab in a 3D dataset does \emph{not} correspond to a
+contiguous range of leaves in this linearization; its leaves are scattered,
+so naive deduplication may not recover the surface-area scaling.
+Whether an optimized layout can achieve this bound empirically---and what
+linearization order best matches common HPC access patterns---is a central
+question of RQ6 (\S\ref{sec:research-questions}). For
 strided or irregular access patterns (e.g., every 10th time step),
-deduplication savings are smaller and depend on the companion dataset's
-linearization order. The optimal layout and the achievable compression
-ratio across realistic HPC access patterns is a research question we
-intend to characterize empirically (RQ6, \S\ref{sec:research-questions}).
+deduplication savings are in general smaller and depend on the companion
+dataset's linearization order.
 
 \subsection{Storage of the Merkle Tree}
 \label{sec:merkle-storage}
@@ -1372,14 +1409,15 @@ behavior depends on the signing context:
   \item \textbf{Unsigned datasets}: The tree may be rebuilt by rehashing the
     on-disk chunk data, since no authenticity guarantee was in force.
   \item \textbf{Signed datasets}: The system must \textbf{fail closed}---report
-    the inconsistency and refuse to auto-rebuild. Automatically rebuilding a
-    signed Merkle tree from unauthenticated on-disk data would ``launder'' any
-    attacker modifications: if the runtime holds the Ed25519 private key (or
-    has auto-signing enabled), it would compute and sign a new root over
-    potentially tampered chunks, institutionalizing the corruption. Instead,
-    the system flags the affected chunks as unverified and requires explicit
-    operator intervention (re-signing from a trusted source or restoring from
-    a known-good backup).
+    the inconsistency and refuse to auto-rebuild. The risk differs by role:
+    a \emph{verifier} without the private key cannot re-sign anything and
+    simply reports the inconsistency and halts. A \emph{writer} with the private
+    key (or with auto-signing enabled) faces the laundering risk: if the runtime
+    automatically rehashes on-disk data and signs the result, it would compute
+    and sign a new root over potentially tampered chunks, institutionalizing the
+    corruption. In both cases the system flags the affected chunks as unverified
+    and requires explicit operator intervention (re-signing from a trusted source
+    or restoring from a known-good backup).
 \end{itemize}
 
 \noindent The C~HDF5 design document (\S\ref{sec:impl}, Phase~2) will specify
@@ -1452,11 +1490,12 @@ the nonce is derived statically from the chunk index alone.
 
 To safely support in-place updates, we derive the nonce as:
 \begin{equation}
-  \text{Nonce}(k, v) = \text{KDF}(\text{dataset\_key}, \; k \,\|\, v)
+  \text{Nonce}(k, v) = \text{KDF}(\text{DEK}, \; k \,\|\, v)
   \label{eq:nonce}
 \end{equation}
-where $k$ is the chunk index and $v$ is a monotonically increasing
-\textbf{per-chunk version counter}. The version counter is stored in the
+where $k$ is the chunk index, $v$ is a monotonically increasing
+\textbf{per-chunk version counter}, and DEK is the per-dataset Data Encryption
+Key described in~\S\ref{sec:signing}. The version counter is stored in the
 companion Merkle dataset alongside the tree nodes (one 64-bit counter per
 leaf, adding 8\,bytes per chunk of overhead). Every write to chunk~$k$---whether
 an append or an in-place update---increments $v$, guaranteeing a unique nonce
@@ -1502,7 +1541,7 @@ core signing mechanism is:
     reusing the trusted-key infrastructure from PR~\#6198.
 \end{itemize}
 
-\paragraph{Post-quantum hybrid signing (T5: harvest-now, decrypt-later).}
+\paragraph{Post-quantum hybrid signing (T5: harvest-now, forge-later).}
 \label{sec:pq-hybrid}
 Scientific data is routinely retained for decades---NOAA climate baselines,
 EQSIM simulation outputs, genomic reference assemblies, and astronomical
@@ -1531,13 +1570,18 @@ Attacks}: an attacker who rewrites the \texttt{\_merkle\_root} attribute to
 specify a weaker hash or cipher cannot produce a valid signature over the
 modified payload, because the algorithm identifiers are covered by both
 $\sigma_\text{Ed25519}$ and $\sigma_\text{ML-DSA-65}$. ML-DSA-65 (NIST FIPS
-204~\cite{fips204}) provides $\sim$192-bit classical and $\sim$128-bit
-post-quantum security; SLH-DSA-128s (NIST FIPS 205~\cite{fips205}) is also
+204~\cite{fips204}) is NIST PQC Category~3, providing approximately AES-192
+strength against both classical and quantum attacks; SLH-DSA-128s (NIST FIPS 205~\cite{fips205}) is also
 implemented as an alternative for deployments preferring hash-based
 signatures whose security rests only on the underlying hash function. A
-verifier accepts the signature iff \emph{both} components verify, providing
-graceful degradation: until a CRQC exists, Ed25519 dominates verification
-time; once one exists, the ML-DSA-65 component preserves authenticity.
+verifier accepts the signature iff \emph{both} components verify
+(strict-AND policy). This means that even today---before a CRQC exists---a
+verifier will reject if either signature is invalid; a file signed with
+Ed25519 alone will not be accepted. This is intentional: it prevents a
+downgrade attack where an adversary strips the PQ component. Until a CRQC
+exists, Ed25519 dominates verification time (ML-DSA-65 verification is
+somewhat slower); once a CRQC exists, the ML-DSA-65 component preserves
+authenticity while the Ed25519 component is considered compromised.
 
 \paragraph{One signature, all datasets.}
 The hybrid signature is applied \textbf{once} to the global
@@ -1576,7 +1620,7 @@ PQ-signature performance numbers for scientific data archives.
 The asymmetric Ed25519 key provides signing (authenticity), but the encryption
 layer (AES-256-CTR, ChaCha20-Poly1305) requires symmetric Data Encryption Keys
 (DEKs). The full design of key management is a broader S2-D2 concern (spanning
-Tasks~2 and~3); for the RustyHDF5 prototype, we adopt the following baseline
+Tasks~2 and~3); for the ClawHDF5 prototype, we adopt the following baseline
 scheme: a single DEK per dataset is generated at dataset creation, wrapped
 (encrypted) with a Key Encryption Key (KEK) derived from user credentials via
 HKDF-SHA-256, and stored as an HDF5 attribute
@@ -1611,6 +1655,10 @@ in the companion dataset, the leaf hash changes, breaking the path to the
 signed root. For AES-256-CTR (which is not an AEAD cipher), the HMAC-SHA-256
 authentication tag serves an analogous role:
 $H(\texttt{0x00} \,\|\, k \,\|\, \text{Ciphertext}_k \,\|\, \text{HMAC}_k \,\|\, v_k)$.
+For \emph{plaintext} (unencrypted) chunks, the leaf hash binds the raw chunk
+data and version counter directly:
+$H(\texttt{0x00} \,\|\, k \,\|\, \text{Chunk}_k \,\|\, v_k)$;
+the index~$k$ is bound in all cases to prevent position-swapping attacks.
 
 \paragraph{Stretch goal: Sigstore transparency log.}
 As an extension, the signed root may be published to a
@@ -1649,12 +1697,20 @@ research:
   \item[Game-based argument (baseline, in scope).]
     A written argument in the paper showing that the construction
     \mbox{(EtM~filter pipeline)~$+$~(version-counter nonce)~$+$~(hybrid
-    signed root over companion-integrity hash)} achieves INT-CTXT against
+    signed root over companion-integrity hash)} achieves
+    \emph{verified-subset soundness} (an EUF-CMA-style goal over the
+    authenticated data structure: no adversary can produce an accepted
+    $(\mathcal{C}', \pi')$ that differs from the honest covering set) against
     the adversary defined in \S\ref{sec:threat}, by reduction to
     (a)~the second-preimage resistance of the underlying hash function,
     (b)~the EUF-CMA security of the hybrid signature scheme, and
-    (c)~the IND-CPA security of the chosen AEAD cipher. We follow the
-    Bellare--Namprempre framework for analyzing generic
+    (c)~the per-chunk INT-CTXT security already provided by the AEAD cipher
+    (for encrypted datasets) or by the Merkle leaf hash alone (for plaintext
+    datasets). Note that the Merkle layer does not re-derive INT-CTXT at the
+    chunk level---AEAD ciphers such as ChaCha20-Poly1305 already provide this
+    via their authentication tag; instead, the Merkle layer adds
+    \emph{cross-chunk and cross-version binding} that no per-chunk AEAD can
+    provide. We follow the Bellare--Namprempre framework for analyzing generic
     composition~\cite{bellare2000encrypt}.
   \item[Symbolic model (stretch, preferred for security venues).]
     A Tamarin Prover~\cite{meier2013tamarin} model of the file-creation,
@@ -1712,11 +1768,15 @@ security venue (USENIX Security, ACSAC) for the resulting paper.
     signed roots at $10^4$--$10^5$ datasets per file and $10^4$--$10^7$
     chunks per dataset (10\,GB--10\,TB at 1\,MB chunk size), including object-header impact and end-to-end
     verification time on x86-64 (with and without AVX-512) and ARM?
-  \item \textbf{(Adversarial soundness.)}~Can a directed adversary with
-    knowledge of the design and full read/write access to the storage
-    medium evade detection by the verification protocol within the stated
-    threat model (T1--T8)? This is evaluated via the red-team study
-    described in~\S\ref{sec:adversarial}.
+  \item \textbf{(Adversarial soundness.)}~Can a white-box adversary with
+    full design knowledge and read/write access to the storage medium evade
+    detection by the verification protocol within the stated threat model
+    (T1--T8)? For each attack class (T1a, T1b, T2--T5, subset-extraction
+    attacks), we report: whether the verifier rejects, the tamper-localization
+    granularity (which chunks are flagged), and the detection latency. Any
+    successful attacks are root-cause-analyzed and the design is updated. This
+    is evaluated via the white-box red-team study described
+    in~\S\ref{sec:adversarial}.
 \end{enumerate}
 
 
@@ -1736,7 +1796,7 @@ proposal:
     Large-scale simulation output from Lawrence Berkeley National Laboratory,
     representative of HPC checkpoint/restart patterns.
   \item \textbf{Synthetic datasets}: Parameterized by chunk size (64\,KB to
-    16\,MB), chunk count ($10^2$ to $10^6$), dimensionality (1D to 3D), and
+    16\,MB), chunk count ($10^2$ to $10^7$), dimensionality (1D to 3D), and
     compression ratio, for controlled benchmarking.
 \end{itemize}
 
@@ -1881,21 +1941,24 @@ trials for I/O-sensitive measurements.
 \label{sec:impl}
 
 The implementation plan is structured around the three primary research
-contributions identified in the abstract: verifiable subset extraction
-(Move~1), post-quantum hybrid signing (Move~2), and a security analysis
-backed by an adversarial red-team study. Items not on the critical path to
-these contributions---in particular AES-256-CTR~$+$~HMAC-SHA-256 filters and
-live Sigstore service integration---are deferred to Phase~3 / future work to
-preserve focus.
+contributions identified in the abstract: verifiable subset extraction,
+post-quantum hybrid signing, and a security analysis backed by an adversarial
+red-team study. Throughout this section, ``Move~$N$'' labels a publication-unit
+contribution targeted at the resulting paper (Move~1 = verifiable subset
+extraction, Move~2 = PQ hybrid signing, Move~3 = adversarial red-team study,
+Move~4 = security analysis, Move~5 = append-only Merkle log, Move~6 = cloud
+evaluation). Items not on the critical path to the primary contributions---in
+particular AES-256-CTR~$+$~HMAC-SHA-256 filters and live Sigstore service
+integration---are deferred to Phase~3 / future work to preserve focus.
 
 \subsection{Phase 1: Core Architecture and Verifiable Subset (Months 1--4)}
 
 \begin{enumerate}[nosep]
   \item \textbf{Platform evaluation (go/no-go, end of Month~1):} Verify that
-    RustyHDF5 can open, chunk-iterate, and write back a 10\,GB multi-dataset
+    ClawHDF5 can open, chunk-iterate, and write back a 10\,GB multi-dataset
     test file. If this gate fails, activate the standalone-library fallback
     (see~\S\ref{sec:risks}).
-  \item Add \texttt{MerkleTree} struct to \texttt{rustyhdf5-format}, building
+  \item Add \texttt{MerkleTree} struct to \texttt{clawhdf5-format}, building
     the tree from chunk hashes during write. Evaluate
     \textbf{SHA-256, BLAKE3, and KangarooTwelve} on HDF5-typical chunk sizes
     (RQ4).
@@ -1919,7 +1982,7 @@ preserve focus.
     certificate over the dataset's chunk-grid parameters. Empirically
     characterize $|\pi|$ for rectangular, strided, and sparse hyperslab
     shapes (RQ6).
-  \item Benchmark against RustyHDF5's existing flat SHA-256 per-dataset
+  \item Benchmark against ClawHDF5's existing flat SHA-256 per-dataset
     verification on synthetic and NOAA datasets, measuring companion dataset
     I/O overhead vs.\ attribute-only at varying chunk counts (RQ1, RQ2, RQ3).
 \end{enumerate}
@@ -1953,7 +2016,7 @@ preserve focus.
     detected/undetected matrix and root-cause-analyze any successful attacks.
   \item \textbf{Cloud object-store evaluation (Move~6):} implement the
     companion-dataset proof retrieval over S3 range-GETs (via the existing
-    cloud read paths in RustyHDF5) and run the intra-region and
+    cloud read paths in ClawHDF5) and run the intra-region and
     cross-region WAN measurements of \S\ref{sec:cloud-eval}. The HSDS and
     h5coro APIs serve as deployment references but are not modified as part
     of this work.
@@ -1972,7 +2035,7 @@ preserve focus.
 \subsection{Phase 3 / Stretch}
 
 \begin{enumerate}[nosep, resume]
-  \item \textbf{Append-only log Merkle mode}: a
+  \item \textbf{Append-only log Merkle mode (Move~5)}: a
     Certificate-Transparency-style variant supporting consistency proofs
     between dataset versions (\emph{``version $n$ is a true prefix of version
     $m$''}), targeting time-series and streaming science workloads.
@@ -2005,7 +2068,7 @@ contributions targeted at the resulting publication are starred.}
 \toprule
 Deliverable & S2-D2 Task & Phase & Scope \\
 \midrule
-Merkle-tree provenance implementation in RustyHDF5 (hybrid storage,
+Merkle-tree provenance implementation in ClawHDF5 (hybrid storage,
   companion-integrity-hash)
   & Task 3 & 1 & Core \\
 Hash benchmark: SHA-256, BLAKE3, KangarooTwelve at HPC chunk sizes
@@ -2166,13 +2229,13 @@ ensembles) where data originates from many independently signed repositories.
 \label{sec:risks}
 
 \begin{description}[nosep]
-  \item[RustyHDF5 maturity.] RustyHDF5 is a relatively new project (2~stars,
+  \item[ClawHDF5 maturity.] ClawHDF5 is a relatively new project (2~stars,
     1~commit on GitHub as of early 2026). If the implementation has gaps that
     block experimentation, we fall back to implementing the Merkle tree as a
     standalone Rust library that operates on HDF5 files via
-    \texttt{rustyhdf5-format}'s low-level parser, bypassing the high-level
+    \texttt{clawhdf5-format}'s low-level parser, bypassing the high-level
     API. To avoid sinking effort into an unusable platform, we establish a
-    \textbf{go/no-go decision point at the end of Month~1}: RustyHDF5 must
+    \textbf{go/no-go decision point at the end of Month~1}: ClawHDF5 must
     successfully open, iterate over all chunks of, and write back a 10\,GB
     multi-dataset HDF5 test file without errors. If this gate is not met,
     the standalone-library fallback is activated immediately.
@@ -2242,7 +2305,7 @@ interpretation. RQ1--RQ5 cover the systems contribution; RQ6--RQ8 cover the thre
 primary contributions. Deeper treatment per RQ than in a single-sweep results section.
 
 \textbf{Security analysis as a first-class section.}
-The game-based INT-CTXT argument and adversarial red-team study are collected in
+The game-based verified-subset soundness argument and adversarial red-team study are collected in
 \S5 (Security Analysis), separate from the design (\S4). This keeps \S4 readable and
 gives security-venue reviewers what they look for.
 
@@ -2268,7 +2331,7 @@ Months~5--6. Write \S8--\S9 and revise \S1 in Month~7. Submittable draft by Mont
 \mapsec{Proposal \S1}{---}{---}
 
 \noindent\textbf{Content:} Single-gap framing: no sub-dataset integrity verification in
-HDF5. Cites Peisert~2021. States three contributions up front. RustyHDF5 rationale:
+HDF5. Cites Peisert~2021. States three contributions up front. ClawHDF5 rationale:
 modular crate architecture, Rust memory safety for crypto, existing filter pipeline.
 
 \noindent\textbf{Writing strategy:} One clear thesis; no two-direction framing. Abstract
@@ -2280,7 +2343,7 @@ to 150~words. Draft early; revise after results to match headline numbers.
 \par\noindent\rule{\linewidth}{0.4pt}
 \mapsec{Proposal \S2--\S\ref{sec:selection}}{---}{---}
 
-\noindent\textbf{Content:} HDF5 chunked storage, filter pipeline, RustyHDF5
+\noindent\textbf{Content:} HDF5 chunked storage, filter pipeline, ClawHDF5
 architecture. Survey of tamper-detection primitives: error-detection codes,
 cryptographic hashes, MAC/AEAD, classical and post-quantum signatures, hash
 trees and authenticated data structures (ZFS, Git, IPFS, CT, Sigstore, Tamassia),
@@ -2401,7 +2464,7 @@ Expect 5--6 figures/tables.
 \noindent\textbf{Content:} Design implications for C~HDF5: filter pipeline ordering
 enforcement, companion dataset preservation semantics, fail-closed crash recovery
 integration with metadata journaling. Cloud deployment (HSDS, ros3~VFD). Limitations:
-single-platform scope, RustyHDF5-specific behaviors. Future work: C~HDF5 integration,
+single-platform scope, ClawHDF5-specific behaviors. Future work: C~HDF5 integration,
 STS integration (explicitly future), append-only log mode, Tamarin model, multi-party
 key management / KMS.
 
@@ -2436,7 +2499,7 @@ get the full story.
   \textbf{\S4} & \textbf{\S5} & \textbf{\S7} & \textbf{\S8} \\
   & & Design & Sec & Results & Disc \\
 \midrule
-P1.1 & Platform eval go/no-go (RustyHDF5 gate)
+P1.1 & Platform eval go/no-go (ClawHDF5 gate)
                                                         & \checkmark & & & \\
 P1.2 & MerkleTree struct + hash eval (SHA-256, BLAKE3, K12)
                                                         & \checkmark & & \checkmark~(RQ4) & \\
