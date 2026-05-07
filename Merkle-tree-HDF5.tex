@@ -4,7 +4,10 @@
 \usepackage{graphicx}
 \usepackage{amsmath,amssymb}
 \usepackage[hyphens]{url}
-\usepackage{hyperref}
+\usepackage[colorlinks=true,
+            linkcolor=blue!60!black,
+            citecolor=blue!60!black,
+            urlcolor=blue!60!black]{hyperref}
 \usepackage{booktabs}
 \usepackage{enumitem}
 \usepackage{xcolor}
@@ -197,12 +200,14 @@ vocabulary within which these technical mechanisms operate.
 
 HDF5 organizes data into \emph{groups} (hierarchical containers) and
 \emph{datasets} (multi-dimensional arrays). Datasets may use \emph{chunked
-storage}, where the array is divided into fixed-size rectangular tiles stored
-independently. Chunks pass through a \emph{filter pipeline} that applies
-transformations (shuffle, compression, checksum) before writing to storage.
+storage}, where the array is divided into fixed-size tiles stored
+independently. Chunks have the option to pass through a \emph{filter pipeline} that applies
+transformations (e.g., shuffle, compression, checksum) before writing to storage.
 Chunked storage is the dominant layout for large scientific datasets because it
 enables partial I/O, compression, and extensibility (resizable dimensions).
-However, other dataset representations are discussed in Section \S\ref{sec:limitations}.
+While chunked storage is common, other dataset representations are discussed in
+Section \S\ref{sec:limitations}.
+
 \subsection{RustyHDF5 Architecture}
 
 RustyHDF5 is organized as 11 Rust crates in a layered architecture:
