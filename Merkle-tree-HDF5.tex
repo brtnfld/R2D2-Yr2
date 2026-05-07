@@ -274,9 +274,11 @@ High-performance environments increasingly adopt T10-PI (SCSI Protection
 Information, also known as T10-DIF)~\cite{t10dif} for end-to-end,
 hardware-accelerated integrity checking from the compute node down to the
 physical drive. The HDF5 fletcher32 chunk filter is in this family. However,
-all listed codes are linear over $\mathrm{GF}(2)$ and can be inverted in
-closed form by an adversary: given a desired alteration, the attacker computes
-a matching tail correction that preserves the checksum. They therefore detect
+all listed codes are linear over $\mathrm{GF}(2)$ (the binary field
+$\{0,1\}$ under XOR arithmetic) and can be inverted in
+closed form by an adversary: given a desired alteration, the attacker uses
+elementary linear algebra over the binary field to compute
+a matching tail correction that preserves the checksum---no brute-force search is required. They therefore detect
 \emph{accidental} corruption only, not \emph{adversarial} tampering, and
 cannot serve as the primary integrity primitive for an authentication scheme.
 
@@ -300,7 +302,8 @@ existing flat-SHA-256 provenance feature is in this category.
 Message authentication codes (HMAC~\cite{rfc2104}, KMAC, AES-CMAC, GMAC,
 Poly1305) and authenticated encryption schemes (AES-GCM~\cite{nist80038d},
 ChaCha20-Poly1305~\cite{rfc8439}, AES-OCB, AEGIS) bind authenticity to a
-shared symmetric key. Tags are compact (16\,B). HMAC-SHA-256 and Poly1305 run
+shared symmetric key. Tags are compact (16\,B, i.e., a 128-bit authentication
+tag appended to each message or chunk). HMAC-SHA-256 and Poly1305 run
 at multi-GB/s per core. Per-chunk MAC or AEAD provides chunk-level adversarial
 integrity at minimal cost. Homomorphic MACs (e.g., Boneh--Freeman
 schemes~\cite{boneh2011homomorphicmac} for network coding) and homomorphic
