@@ -2229,16 +2229,19 @@ ensembles) where data originates from many independently signed repositories.
 \label{sec:risks}
 
 \begin{description}[nosep]
-  \item[ClawHDF5 maturity.] ClawHDF5 is a relatively new project (2~stars,
-    1~commit on GitHub as of early 2026). If the implementation has gaps that
-    block experimentation, we fall back to implementing the Merkle tree as a
-    standalone Rust library that operates on HDF5 files via
-    \texttt{clawhdf5-format}'s low-level parser, bypassing the high-level
-    API. To avoid sinking effort into an unusable platform, we establish a
-    \textbf{go/no-go decision point at the end of Month~1}: ClawHDF5 must
-    successfully open, iterate over all chunks of, and write back a 10\,GB
-    multi-dataset HDF5 test file without errors. If this gate is not met,
-    the standalone-library fallback is activated immediately.
+  \item[ClawHDF5 maturity.] ClawHDF5 has grown into an actively developed
+    15-crate workspace ($\sim$40 commits as of mid-2026), but its primary
+    focus has shifted toward an AI agent memory engine that uses HDF5 as a
+    storage backend. To insulate this work from that churn, we depend solely
+    on the \texttt{clawhdf5-format} crate---its \texttt{no\_std}-compatible
+    binary parser/writer---rather than the high-level API. This is the
+    standalone-library strategy already described above, and it avoids
+    re-exposure to ClawHDF5's agent-memory development cycle. To confirm the
+    crate is fit for purpose, we retain the \textbf{go/no-go decision point
+    at the end of Month~1}: \texttt{clawhdf5-format} must successfully open,
+    iterate over all chunks of, and write back a 10\,GB multi-dataset HDF5
+    test file without errors. If this gate is not met, the fallback is to
+    vendor and patch the crate directly within this project's workspace.
   \item[Companion dataset portability.] A reader unaware of the Merkle
     convention will see an extra dataset and ignore it, and a na\"{\i}ve file
     copy that omits the \texttt{\_merkle} group breaks verification. The root
@@ -2290,7 +2293,10 @@ $\star$ = primary research contribution}
 \textbf{Single research direction, three named contributions.}
 The paper makes one argument:
 HDF5 lacks sub-dataset integrity verification
-$\rightarrow$ Merkle trees are the right primitive
+$\rightarrow$ a survey of tamper-detection primitives (error codes, hashes, MACs,
+signatures, authenticated structures, ZKPs, PoR/PDP, TEEs, and scientific-format
+precedents) shows that a Merkle tree with a hybrid-signed root is the only candidate
+satisfying all ten HDF5-specific requirements
 $\rightarrow$ here is a design that handles the HDF5-specific problems
 $\rightarrow$ here is the evidence.
 Three publication-shaped contributions sit inside that argument:
