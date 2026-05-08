@@ -317,11 +317,18 @@ shared symmetric key. Tags are compact (16\,B, i.e., a 128-bit authentication
 tag appended to each message or chunk). HMAC-SHA-256 and Poly1305 run
 at multi-GB/s per core. Per-chunk MAC or AEAD provides chunk-level adversarial
 integrity at minimal cost. Homomorphic MACs (e.g., Boneh--Freeman
-schemes~\cite{boneh2011homomorphicmac} for network coding) and homomorphic
-hashing (e.g., Meta's LtHash~\cite{lthash}) extend this family by allowing
-intermediate nodes to incrementally aggregate authenticators when combining
-data packets or propagating chunk updates, avoiding the need to re-authenticate
-from scratch---a property relevant to streaming and in-transit integrity.
+schemes~\cite{boneh2011homomorphicmac} for network coding) extend this family
+by allowing intermediate nodes to aggregate keyed authenticators; verification
+still requires the secret key.  Homomorphic hashing (e.g., Meta's
+LtHash~\cite{lthash}) is conceptually adjacent but distinct: LtHash is an
+\emph{unkeyed} hash function whose outputs lie in a group with a homomorphic
+addition law, relying on the hardness of lattice-style problems rather than a
+shared secret.  Crucially, LtHash \emph{does not require a secret key to
+verify}---any party can recompute and check the hash---which sets it apart from
+MACs in the verification model.  Both constructions allow intermediate nodes to
+incrementally aggregate authenticators when combining data packets or
+propagating chunk updates, avoiding the need to re-authenticate from
+scratch---a property relevant to streaming and in-transit integrity.
 
 The fundamental limitation of all symmetric authenticators, however, is that
 verification requires possession of the secret key: a third-party auditor, a
@@ -425,11 +432,13 @@ proof systems. Verkle trees~\cite{verkle} use KZG as the inner-node primitive
 for a high-fanout tree with very compact multiproofs. IPA / Bulletproofs
 \cite{bunz2018bulletproofs} avoid trusted setup but produce $O(\log N)$ proofs
 and have higher commit cost. FRI-based commitments underpin
-STARKs~\cite{bensasson2018stark} and are post-quantum but produce 10s of KB
-proofs. All pairing-based schemes (KZG, Verkle, Groth16~\cite{groth2016sn})
-are broken by Shor; all require an $O(N)$ multi-scalar multiplication to
-commit; none are competitive with hash trees for our setting at terabyte
-scale.
+STARKs~\cite{bensasson2018stark} and are post-quantum and require no trusted
+setup; however, their prover overhead scales with circuit size and their proof
+sizes run 10--100\,KB, making them uncompetitive with simple Merkle inclusion
+proofs for static data verification. All pairing-based schemes (KZG, Verkle,
+Groth16~\cite{groth2016sn}) are broken by Shor; all require an $O(N)$
+multi-scalar multiplication to commit; none are competitive with hash trees for
+our setting at terabyte scale.
 
 \subsection{Zero-knowledge proofs and folding schemes}
 
@@ -583,8 +592,12 @@ requirements that any candidate primitive must meet for the HDF5 setting:
   \item[R3: In-place chunk update.]
     HDF5 permits any chunk in a dataset to be overwritten (e.g., during
     checkpoint/restart, or correction of erroneous values). Updating chunk
-    $k$ must cost $O(\log N)$ in both data-plane and signing-plane work,
-    not $O(N)$.
+    $k$ must cost $O(\log N)$ in \emph{tree update} work (recomputing the
+    leaf hash and the $\lceil\log_2 N\rceil$ ancestor nodes on the path to
+    the root) and $O(\log N)$ in signing-plane work, not $O(N)$.  The
+    physical I/O cost is governed separately by the filesystem or object store
+    and may involve copy-on-write semantics; this requirement addresses only
+    the cryptographic maintenance overhead.
   \item[R4: Tamper localization.]
     On a verification failure, the mechanism must identify which specific
     chunks (or a tight superset) were modified, in $O(\log N)$ work, rather
@@ -1268,6 +1281,24 @@ strided or irregular access patterns (e.g., every 10th time step),
 deduplication savings are in general smaller and depend on the companion
 dataset's linearization order.
 
+\noindent\textbf{Space-filling curve linearization.}
+A promising direction for closing this gap is to replace row-major order with a
+\textbf{space-filling curve} (SFC) to map the $r$-dimensional chunk grid to a 1D
+leaf sequence.  Morton coding (Z-order curve)~\cite{morton1966} is particularly
+attractive: it is computed in $O(1)$ per chunk via bit-interleaving of the chunk
+coordinates, requires no additional metadata, and has been shown to preserve
+multi-dimensional locality in a provably hierarchical fashion---neighboring
+chunks in $r$-dimensional space map to nearby positions in the 1D Morton order.
+A Hilbert curve offers asymptotically better locality constants but requires a
+more involved coordinate transform.  Under Morton or Hilbert ordering, a
+contiguous 3D hyperslab corresponds to a union of \emph{short contiguous
+ranges} of leaves, substantially increasing the fraction of shared internal
+Merkle nodes eligible for deduplication and pushing empirical proof sizes
+toward the theoretical $O(\mathrm{SurfaceArea}\times\log N)$ bound.
+Quantifying this improvement---across chunk shapes, hyperslab geometries, and
+dimensionalities---is a central goal of RQ6 and would make for a compelling
+chart comparing proof size under row-major, Z-order, and Hilbert layouts.
+
 \subsection{Storage of the Merkle Tree}
 \label{sec:merkle-storage}
 
@@ -1320,8 +1351,25 @@ information (e.g., the shape of sparse genomic or radar data implies content).
 If structure-hiding is required, the null hash should instead incorporate a
 secret value derived from the dataset encryption key
 (e.g., $H(\texttt{0x02}\,\|\,\text{PRF}(\text{DEK},\texttt{"null"}))$),
-or the dataset must be allocated as fully dense. This trade-off is noted as
-a configuration concern in the security design document.
+or the dataset must be allocated as fully dense.
+However, using a DEK-derived PRF introduces a \textbf{verification
+trade-off}: because a third-party auditor lacks the DEK, they cannot
+compute the PRF-masked null hashes and therefore cannot verify the Merkle
+tree's structure for sparse regions---they cannot even confirm which leaves
+are null versus populated without decrypting.  To permit auditable
+verification without exposing chunk plaintexts, the design can distribute a
+separate \textbf{Structure Key} $SK = \text{KDF}(\text{KEK},\texttt{"structure"})$
+derived from the Key Encryption Key rather than the Data Encryption Key.
+Auditors receive $SK$, which lets them compute
+$H(\texttt{0x02}\,\|\,\text{PRF}(SK,\texttt{"null"}))$
+and reconstruct the full tree topology without ever obtaining the DEK or
+decrypting any payload chunk.  The choice between DEK-derived and
+KEK-derived PRF nulls is a policy decision: DEK-derived maximizes
+confidentiality at the cost of excluding third-party auditors; SKderived
+permits structural audits while still concealing chunk content.
+This trade-off is noted as a configuration concern in the security design document.
+The Structure Key mechanism is scoped as a design option within Phase~2
+(\S\ref{sec:impl}) alongside the choice of null-hash PRF derivation path.
 
 \noindent An important constraint shapes the storage design: HDF5 attributes
 reside in the dataset's object header and are loaded whenever the dataset is
@@ -1365,6 +1413,22 @@ design:
     \end{itemize}
 \end{enumerate}
 
+\noindent\textbf{Write amplification.}
+Because the companion dataset's 4\,KB chunks each hold $4096/32 = 128$ tree
+nodes, updating a \emph{single} data chunk requires rewriting its leaf hash
+plus the $O(\log N)$ ancestor nodes on the path to the root.  If those
+ancestors span multiple 4\,KB companion chunks (which occurs as soon as the
+tree depth exceeds one chunk boundary), a single data write triggers
+$O(\log N / \log 128) = O(\log N / 7)$ companion-chunk I/O operations in
+addition to the data chunk write itself.  Under concurrent or parallel
+writers---common in HPC checkpoint workloads---multiple independent data
+updates will frequently invalidate the \emph{same} upper-level companion
+chunks (which hold shared ancestor nodes near the root), producing contention
+and redundant rewrite traffic.  The Map-Reduce aggregator (\S\ref{sec:impl})
+amortizes this by batching leaf updates before recomputing the path to the
+root, but the residual I/O amplification must still be characterized
+experimentally; this is explicitly scoped within RQ3.
+
 \noindent For \textbf{small datasets} (under 256 chunks / $\sim$16\,KB of tree),
 the full tree may be stored directly in the attribute, avoiding the overhead of
 a companion dataset. The implementation will select the appropriate strategy
@@ -1391,6 +1455,27 @@ filesystem extended attributes, or a policy registry), the \emph{absence} of
 a valid Merkle root is treated as a fatal security exception rather than a
 graceful degradation. Strict Mode is opt-in for interoperability but mandatory
 in high-assurance deployment contexts.
+
+\noindent\textbf{Strict Mode bootstrapping.}
+A subtlety in Strict Mode is the \emph{bootstrapping problem}: the mechanism
+by which a verifier knows a file is policy-governed must itself be
+tamper-evident.  If policy membership is stored solely inside the HDF5 file
+(e.g., as an attribute), an attacker who can strip the Merkle root can equally
+strip the policy flag, causing the verifier to silently fall back to
+non-strict mode.  Strict Mode therefore requires an \textbf{out-of-band
+policy registry}---a separate, protected source of truth that maps file
+identifiers (e.g., cryptographic file fingerprints or storage URIs) to their
+required policy level.  Concrete mechanisms include: filesystem extended
+attributes on the directory or mount point (xattr enforced by a MAC policy,
+e.g., SELinux or AppArmor); a site-managed policy server queried at file
+open; or an LDAP/SCIM directory entry for the dataset.  The verifier consults
+this registry \emph{before} attempting to read the file, so policy enforcement
+is independent of file content.  If the registry is unavailable---for
+example, when a file is transferred to a disconnected environment---the
+verifier must either fail closed (reject all files) or fall back to an
+embedded policy hint, accepting the reduced security guarantee.  The C~HDF5
+design document (\S\ref{sec:impl}, Phase~2) will specify the policy
+distribution interface and the required trust properties of the registry.
 
 \paragraph{Crash consistency.}
 The hybrid storage layout introduces a write-ordering requirement: if the
@@ -1653,7 +1738,24 @@ Explicitly binding the chunk index~$k$ into the leaf hash prevents
 ciphertext, tag, and version counter of chunk~$k'$ in place of chunk~$k$,
 because the index is baked into the hash; the forged leaf will not match
 the honest leaf at position~$k$ in the tree, and Merkle path verification
-will reject it. This is especially important under Sparse Merkle Trees,
+will reject it.
+\textbf{Length-prefixing requirement.}  If compression is applied before
+encryption (as in the shuffle$\to$compress$\to$encrypt pipeline of
+\S\ref{sec:filter-order}), the ciphertext length is variable across chunks.
+Concatenating variable-length fields without explicit length delimiters
+can admit \emph{boundary-shifting} (a.k.a.\ length-extension at the
+field boundary): a transcript $(\text{Ct}_1 \| \text{Tag}_1)$ with
+$|\text{Ct}_1| = n_1$ and $(\text{Ct}_2 \| \text{Tag}_2)$ with
+$|\text{Ct}_2| = n_2$ may produce the same bit string if a suffix of
+$\text{Ct}_1$ is reassigned to the front of the tag field.  The
+implementation must therefore encode the serialization as
+$\texttt{0x00} \| \text{len}(k) \| k \| \text{len}(\text{Ciphertext}_k) \|
+\text{Ciphertext}_k \| \text{Tag}_k \| v_k$, where all length fields are
+fixed-width big-endian integers.  Because the Poly1305 tag is always exactly
+16\,bytes and the version counter $v_k$ is always a fixed-width integer, only
+the ciphertext length field needs to be explicit; nonetheless, including all
+length fields is the safest practice and is mandated in the implementation
+specification. This is especially important under Sparse Merkle Trees,
 where dynamically collapsed subtrees could otherwise introduce structural
 ambiguity in proof generation. Critically, including $v_k$ in the leaf hash
 \textbf{cryptographically binds the version counter to the tree}: if an
@@ -1752,7 +1854,11 @@ security venue (USENIX Security, ACSAC) for the resulting paper.
     compared to full-dataset rehashing?
   \item How does incremental tree extension perform for append-heavy workloads
     (time-series, streaming sensor data) compared to re-signing the entire
-    dataset?
+    dataset?  Additionally, what is the write-amplification factor---number of
+    companion-dataset chunk I/Os per data chunk update---as a function of tree
+    depth, companion chunk size, and writer concurrency, and does the
+    Map-Reduce aggregator reduce amplification to an acceptable level for
+    parallel HPC writers?
   \item What is the throughput advantage of BLAKE3 and KangarooTwelve over
     SHA-256 for Merkle tree construction at HDF5-typical chunk sizes, and does
     BLAKE3's internal tree hashing mode offer additional speedup for
