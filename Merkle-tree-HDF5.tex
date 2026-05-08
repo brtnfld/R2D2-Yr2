@@ -16,7 +16,7 @@
 \usepackage{listings}
 \usepackage{fancyhdr}
 \usepackage{colortbl}
-\setlength{\emergencystretch}{3em}
+\setlength{\emergencystretch}{4em}
 \newcommand{\mapsec}[3]{%
   \smallskip\noindent
   \begin{tabular}{@{}p{3.2cm}p{9.8cm}@{}}
@@ -636,6 +636,7 @@ requirements.
 \centering
 \small
 \setlength{\tabcolsep}{3.5pt}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{lccccccc>{\columncolor{blue!12}}c}
 \toprule
 \textbf{Requirement}
@@ -660,7 +661,7 @@ R8 no trusted setup     & \checkmark & \checkmark & \checkmark & $\times$   & $\
 R9 PQ upgrade path      & \checkmark & \checkmark & $\dagger$  & $\times$   & $\times$   & STARK only & vendor     & \checkmark \\
 R10 HPC-feasible build  & \checkmark & \checkmark & 3\,h$^h$   & 3\,h$^a$   & 1\,s$^a$   & $>$24\,h$^b$ & \checkmark & 30\,s$^i$ \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \caption{Candidate primitives against the requirements of
 \S\ref{sec:requirements}. Build-cost row (R10) reports order-of-magnitude
 build time at $N=10^7$ chunks (10\,TB at 1\,MB chunks); see footnote~$^i$
@@ -1036,6 +1037,7 @@ SWMR (Single-Writer/Multiple-Reader) access mode.
 
 \begin{figure}[ht]
 \centering
+\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
   node distance=0.55cm and 0.3cm,
   >=Stealth,
@@ -1112,16 +1114,16 @@ SWMR (Single-Writer/Multiple-Reader) access mode.
 \node[font=\scriptsize\itshape, text=gray!70, left=0.1cm of n03]  {Level 2};
 \node[font=\scriptsize\itshape, text=gray!70, left=0.1cm of root] {Root};
 
-\end{tikzpicture}
+\end{tikzpicture}}
 
 \smallskip
-{\scriptsize
+{\scriptsize\resizebox{\linewidth}{!}{%
 \begin{tabular}{@{}l@{\hspace{6pt}}l@{\hspace{14pt}}l@{\hspace{6pt}}l@{}}
   \fcolorbox{blue!60!black}{blue!20}{\phantom{xx}} & Verified leaf (H(C2)) &
   \fcolorbox{orange!70!black}{orange!22}{\phantom{xx}} & Recomputed by verifier \\[2pt]
   \fcolorbox{red!60!black}{red!12}{\phantom{xx}}\,\textit{dashed} & Witness (given by prover) &
   \fcolorbox{green!60!black}{green!20}{\phantom{xx}} & Verified root \\
-\end{tabular}}
+\end{tabular}}}
 
 \caption{Merkle tree over an 8-chunk dataset. To verify Chunk~2 the verifier
 hashes it to get H(C2)~\textcolor{blue!60!black}{(blue)}, is given the three
@@ -1134,6 +1136,7 @@ reading any other chunk data.}
 
 
 \subsection{Hash Algorithm Selection}
+\label{sec:hash-select}
 
 We propose evaluating three hash functions to span the
 performance--compliance--standards space:
@@ -1557,9 +1560,12 @@ to a first-class research deliverable. The signed root attribute carries a
 hybrid signature consisting of:
 
 \begin{equation}
-  \sigma_\text{root} = \bigl(\sigma_\text{Ed25519}(R), \;
-                            \sigma_\text{ML-DSA-65}(R)\bigr),
-  \quad R = \text{root} \,\|\, \text{companion\_hash} \,\|\, v_\text{dataset} \,\|\, \tau \,\|\, \text{AlgID}
+\begin{aligned}
+  \sigma_\text{root} &= \bigl(\sigma_\text{Ed25519}(R),\;
+                             \sigma_\text{ML-DSA-65}(R)\bigr), \\
+  R &= \text{root} \,\|\, \text{companion\_hash} \,\|\,
+       v_\text{dataset} \,\|\, \tau \,\|\, \text{AlgID}
+\end{aligned}
 \end{equation}
 
 \noindent where $R$ is the canonical signed payload (root, companion integrity
@@ -1697,8 +1703,8 @@ research:
 \begin{description}[nosep]
   \item[Game-based argument (baseline, in scope).]
     A written argument in the paper showing that the construction
-    \mbox{(EtM~filter pipeline)~$+$~(version-counter nonce)~$+$~(hybrid
-    signed root over companion-integrity hash)} achieves
+    (EtM filter pipeline) $+$ (version-counter nonce) $+$ (hybrid
+    signed root over companion-integrity hash) achieves
     \emph{verified-subset soundness} (an EUF-CMA-style goal over the
     authenticated data structure: no adversary can produce an accepted
     $(\mathcal{C}', \pi')$ that differs from the honest covering set) against
@@ -1941,115 +1947,475 @@ trials for I/O-sensitive measurements.
 \section{Implementation Plan}
 \label{sec:impl}
 
-The implementation plan is structured around the three primary research
-contributions identified in the abstract: verifiable subset extraction,
-post-quantum hybrid signing, and a security analysis backed by an adversarial
-red-team study. Throughout this section, ``Move~$N$'' labels a publication-unit
-contribution targeted at the resulting paper (Move~1 = verifiable subset
+This section describes the work as concrete, step-by-step tasks ordered to
+build progressively from a working ClawHDF5 environment through the three
+primary research contributions. Each task specifies what to build, which Rust
+crate to work in, how to test the result, and a clear \emph{Done~when}
+acceptance criterion. Items marked \textbf{(Move~$N$)} are publication-unit
+contributions targeted at the resulting paper (Move~1 = verifiable subset
 extraction, Move~2 = PQ hybrid signing, Move~3 = adversarial red-team study,
 Move~4 = security analysis, Move~5 = append-only Merkle log, Move~6 = cloud
-evaluation). Items not on the critical path to the primary contributions---in
-particular AES-256-CTR~$+$~HMAC-SHA-256 filters and live Sigstore service
-integration---are deferred to Phase~3 / future work to preserve focus.
+evaluation). AES-256-CTR~$+$~HMAC-SHA-256 filters and live Sigstore service
+integration are deferred to Phase~3 to preserve focus on the critical path.
 
+%% ── Phase 1 ──────────────────────────────────────────────────────────────────
 \subsection{Phase 1: Core Architecture and Verifiable Subset (Months 1--4)}
 
+\noindent\textit{Background reading before starting Phase~1:} review
+\S\ref{sec:arch} (ClawHDF5 crate layout), \S\ref{sec:merkle} (tree
+construction and domain-separation rules), and \S\ref{sec:merkle-storage}
+(hybrid attribute~$+$~companion-dataset layout).
+
+%% ── P1.1 ──────────────────────────────────────────────────────────────────
+\paragraph{P1.1\enspace Platform evaluation / go--no-go gate (Weeks~1--2).}
+Before writing any Merkle-tree code, confirm that ClawHDF5 supports all the
+I/O patterns this work requires. If any step below fails, activate the
+standalone-library fallback described in~\S\ref{sec:risks}.
+
 \begin{enumerate}[nosep]
-  \item \textbf{Platform evaluation (go/no-go, end of Month~1):} Verify that
-    ClawHDF5 can open, chunk-iterate, and write back a 10\,GB multi-dataset
-    test file. If this gate fails, activate the standalone-library fallback
-    (see~\S\ref{sec:risks}).
-  \item Add \texttt{MerkleTree} struct to \texttt{clawhdf5-format}, building
-    the tree from chunk hashes during write. Evaluate
-    \textbf{SHA-256, BLAKE3, and KangarooTwelve} on HDF5-typical chunk sizes
-    (RQ4).
-  \item Implement the hybrid storage layout: root-hash attribute
-    (\texttt{\_merkle\_root}) on the dataset plus chunked companion dataset
-    (\texttt{/\_merkle/<name>}) for the full tree, including the
-    \emph{companion-integrity hash} bound into the root attribute.
-    Include automatic fallback to attribute-only storage for small datasets
-    ($\leq 256$ chunks).
-  \item Implement the verification API: \texttt{verify\_root}
-    (instant root check from attribute alone), \texttt{verify\_chunk}
-    (partial verification via proof path, $O(\log N)$ companion reads),
-    \texttt{verify\_dataset} (full tree verification), and
-    \texttt{extend\_merkle} / \texttt{update\_merkle} for incremental append
-    and in-place overwrite along the affected $O(\log N)$ path.
-  \item \textbf{Verifiable subset extraction (Move~1):}
-    implement \texttt{extract\_subset(dataset, hyperslab)} returning the
-    chunk set plus the subset proof~$\pi$ defined in~\S\ref{sec:subset},
-    and \texttt{verify\_subset(...)} for the recipient side. Include
-    witness deduplication for shared internal nodes and the coverage
-    certificate over the dataset's chunk-grid parameters. Empirically
-    characterize $|\pi|$ for rectangular, strided, and sparse hyperslab
-    shapes (RQ6).
-  \item Benchmark against ClawHDF5's existing flat SHA-256 per-dataset
-    verification on synthetic and NOAA datasets, measuring companion dataset
-    I/O overhead vs.\ attribute-only at varying chunk counts (RQ1, RQ2, RQ3).
+  \item Clone the ClawHDF5 repository and run \texttt{cargo test --workspace}.
+    All existing tests must pass with no warnings about missing features.
+  \item Generate a synthetic 10\,GB HDF5 file that has at least three datasets
+    with different chunk sizes (e.g., 64\,KB, 256\,KB, 1\,MB). Use
+    ClawHDF5's high-level API in \texttt{clawhdf5}.
+  \item Write a test that opens the file, iterates over every chunk of one
+    dataset (reading raw chunk bytes), modifies one chunk in memory, and
+    writes it back. Re-open the file and read the modified chunk to confirm
+    the write succeeded without corrupting adjacent chunks.
+  \item Repeat step~3 on a real NOAA sample file from the provided test-data
+    archive.
+  \item \emph{Done when:} All four steps above complete without panics or
+    data-corruption failures and the modified file re-opens cleanly.
 \end{enumerate}
 
+%% ── P1.2 ──────────────────────────────────────────────────────────────────
+\paragraph{P1.2\enspace \texttt{MerkleTree} struct and hash benchmarks
+(Weeks~2--5).}
+Implement the core tree data structure and compare three hash functions across
+HDF5-typical chunk sizes (RQ4). Read \S\ref{sec:hash-select} for the
+performance--compliance tradeoffs among SHA-256, BLAKE3, and K12.
+
+\begin{enumerate}[nosep]
+  \item In \texttt{clawhdf5-format/src/merkle.rs}, add:
+\begin{lstlisting}
+pub enum HashAlg { Sha256, Blake3, K12 }
+
+pub struct MerkleTree {
+    pub leaves: Vec<[u8; 32]>,  // leaf hashes, left to right
+    pub nodes:  Vec<[u8; 32]>,  // complete binary tree, level-order
+    pub root:   [u8; 32],
+    pub alg:    HashAlg,
+}
+\end{lstlisting}
+  \item Implement \texttt{MerkleTree::build(leaves: \&[[u8;32]], alg: HashAlg)
+    -> Self}. Apply domain-separation prefixes exactly as specified in
+    \S\ref{sec:merkle-storage}: prepend \texttt{0x00} before hashing leaf
+    inputs, \texttt{0x01} before hashing pairs of internal nodes, and
+    \texttt{0x02} for unallocated sparse-chunk slots.
+  \item Add a helper \texttt{hash\_chunk(data: \&[u8], alg: HashAlg)
+    -> [u8;32]} that computes the leaf hash (with the \texttt{0x00} prefix)
+    over raw chunk bytes.
+  \item Write unit tests covering at minimum:
+    \begin{itemize}[nosep]
+      \item a single-leaf tree (the root must equal the leaf hash),
+      \item a two-leaf tree (verify the root by hand),
+      \item an eight-leaf tree whose expected root is pre-computed externally
+        using a reference implementation.
+    \end{itemize}
+  \item Add a \texttt{cargo bench} microbenchmark comparing SHA-256, BLAKE3,
+    and K12 at chunk sizes 64\,KB, 256\,KB, and 1\,MB. Save results to
+    \texttt{benches/results/hash-bench-\$(hostname).txt} with CPU model and
+    RAM size in the header.
+  \item \emph{Done when:} All unit tests pass; benchmark output is committed.
+\end{enumerate}
+
+%% ── P1.3 ──────────────────────────────────────────────────────────────────
+\paragraph{P1.3\enspace Hybrid storage layout (Weeks~4--6).}
+Persist the Merkle tree alongside its dataset in the HDF5 file using the
+two-tier layout defined in \S\ref{sec:merkle-storage}: a small root-hash
+HDF5 attribute for fast checks, plus a companion dataset for the full node
+array when $N > 256$ chunks.
+
+\begin{enumerate}[nosep]
+  \item In \texttt{clawhdf5-format}, implement
+    \texttt{write\_merkle\_attr(dataset: \&Dataset, tree: \&MerkleTree)}.
+    Pack the root hash (32 bytes), algorithm identifier (1 byte), and
+    companion-integrity hash (32 bytes, see step~3) into a fixed-width binary
+    blob and write it as the HDF5 attribute \texttt{\_merkle\_root} on the
+    dataset.
+  \item Implement \texttt{write\_merkle\_companion(file: \&File, name: \&str,
+    tree: \&MerkleTree)}. For datasets with more than 256 chunks, write the
+    complete \texttt{nodes} array as a flat \texttt{u8} dataset at path
+    \texttt{/\_merkle/\{name\}}. For datasets with 256 or fewer chunks,
+    pack all node hashes into the attribute directly (no companion dataset).
+  \item Compute the companion-integrity hash: after writing the companion
+    dataset, compute SHA-256 over its full byte content and store the result
+    in the \texttt{\_merkle\_root} attribute. This single extra hash catches
+    any direct tampering with the companion dataset before the tree is walked.
+  \item Write a round-trip test: create a 1,024-chunk synthetic dataset, call
+    the write functions, close the file, re-open it, read back the attribute
+    and companion, and verify the companion-integrity hash matches the
+    recomputed value.
+  \item Confirm the companion dataset is visible using
+    \texttt{h5dump -n} on the test file and that no existing ClawHDF5 tests
+    regress (\texttt{cargo test --workspace}).
+  \item \emph{Done when:} Round-trip test passes; \texttt{h5dump} shows the
+    expected paths; no regressions.
+\end{enumerate}
+
+%% ── P1.4 ──────────────────────────────────────────────────────────────────
+\paragraph{P1.4\enspace Verification API (Weeks~6--9).}
+Expose five public functions that cover the full range of verification
+granularities described in \S\ref{sec:merkle}. Add these signatures to
+\texttt{clawhdf5-format/src/merkle.rs}:
+
+\begin{lstlisting}
+pub fn verify_root(d: &Dataset) -> Result<bool, MerkleError>;
+pub fn verify_chunk(d: &Dataset, idx: usize) -> Result<bool, MerkleError>;
+pub fn verify_dataset(d: &Dataset) -> Result<bool, MerkleError>;
+pub fn extend_merkle(d: &Dataset, idx: usize, h: [u8;32]) -> Result<(), MerkleError>;
+pub fn update_merkle(d: &Dataset, idx: usize, h: [u8;32]) -> Result<(), MerkleError>;
+\end{lstlisting}
+
+\begin{enumerate}[nosep]
+  \item \texttt{verify\_root}: reads the \texttt{\_merkle\_root} attribute,
+    re-hashes the companion dataset bytes, and compares against the stored
+    companion-integrity hash. Sub-second; does \emph{not} re-hash chunk
+    data---only detects tampering with the companion dataset.
+  \item \texttt{verify\_chunk}: re-hashes the live chunk at index \texttt{idx},
+    reads the $O(\log N)$ sibling hashes from the companion dataset, and walks
+    the proof path to the root, comparing the recomputed root to the stored value.
+  \item \texttt{verify\_dataset}: re-hashes every chunk, rebuilds the tree
+    from scratch, and compares the computed root to the stored root.
+    This is the full $O(N)$ integrity check.
+  \item \texttt{extend\_merkle}: appends a new leaf hash \texttt{h} at position
+    \texttt{idx} and recomputes only the $O(\log N)$ nodes on the path to the
+    root; leaves all other nodes unchanged.
+  \item \texttt{update\_merkle}: same path recomputation as
+    \texttt{extend\_merkle} but for an in-place overwrite of an existing chunk.
+  \item Write tests using a 1,024-chunk synthetic dataset. Tamper one byte
+    in one chunk on disk (using raw file I/O, bypassing ClawHDF5). Confirm:
+    \texttt{verify\_chunk} returns \texttt{Err(MerkleError::HashMismatch)}
+    for the tampered chunk; \texttt{verify\_dataset} also returns an error;
+    \texttt{verify\_root} returns \texttt{Ok(true)} (correct---it only
+    checks the companion, not chunk data).
+  \item \emph{Done when:} All five functions compile and pass tests; the
+    tamper-detection test produces exactly the expected error values.
+\end{enumerate}
+
+%% ── P1.5 ──────────────────────────────────────────────────────────────────
+\paragraph{P1.5$\star$\enspace Verifiable subset extraction
+(Weeks~8--13, \textbf{Move~1}).}
+This is the first primary research contribution. A recipient of a hyperslab
+must be able to prove cryptographically that the delivered chunks are a
+\emph{complete and correct} subset of the signed parent dataset---not just
+that each individual chunk is intact. Read \S\ref{sec:subset} thoroughly
+before starting; the coverage certificate is what distinguishes this from a
+plain Merkle inclusion proof.
+
+\begin{enumerate}[nosep]
+  \item In \texttt{clawhdf5-format/src/subset\_proof.rs}, define:
+\begin{lstlisting}
+pub struct ChunkGridParams {
+    pub dims:        Vec<u64>,   // dataset dimensions
+    pub chunk_shape: Vec<u64>,   // chunk dimensions
+    pub grid_hash:   [u8; 32],   // H(dims || chunk_shape)
+}
+
+pub struct SubsetProof {
+    pub chunk_indices: Vec<usize>,
+    pub leaf_hashes:   Vec<[u8; 32]>,
+    pub sibling_paths: Vec<Vec<[u8; 32]>>,  // one path per chunk
+    pub grid_params:   ChunkGridParams,
+    pub coverage_cert: [u8; 32],  // H(sorted_indices || grid_hash)
+}
+\end{lstlisting}
+  \item Implement \texttt{extract\_subset(dataset: \&Dataset,}
+    \texttt{hyperslab: \&Hyperslab)} returning
+    \texttt{Result<SubsetProof, MerkleError>}. Translate
+    the hyperslab into a sorted list of chunk indices, fetch the Merkle
+    sibling paths for each, deduplicate internal nodes shared by adjacent
+    proof paths (to keep $|\pi|$ compact), and build the coverage certificate
+    by hashing the sorted index list together with the grid-parameter hash.
+  \item Implement \texttt{verify\_subset(root: [u8;32], chunks: \&[ChunkData],
+    proof: \&SubsetProof) -> Result<bool, MerkleError>}. On the recipient
+    side: re-hash each delivered chunk, walk its sibling path to confirm it
+    is included under \texttt{root}, and verify the coverage certificate
+    confirms no requested chunk is missing or substituted.
+  \item Measure proof size~$|\pi|$ (bytes) for three hyperslab shapes on a
+    dataset with $N = 65{,}536$ chunks:
+    \begin{itemize}[nosep]
+      \item a contiguous rectangular slab (best case, many shared nodes),
+      \item a strided slab (fewer shared nodes),
+      \item a random sparse selection of $k$ chunks (near-worst case).
+    \end{itemize}
+    Record results and compare against the theoretical bound $O(k \log N)$
+    (RQ6). Save the table to \texttt{benches/results/subset-proof-size.csv}.
+  \item \emph{Done when:} \texttt{verify\_subset} returns \texttt{Ok(true)}
+    for a correct proof; returns \texttt{Err} when one delivered chunk is
+    modified; returns \texttt{Err} when one requested chunk is silently
+    omitted from the delivered set. All three failure modes must be covered
+    by explicit tests.
+\end{enumerate}
+
+%% ── P1.6 ──────────────────────────────────────────────────────────────────
+\paragraph{P1.6\enspace Phase~1 benchmarks (Weeks~13--16).}
+Compare Merkle-tree overhead against ClawHDF5's existing flat SHA-256
+verification to answer RQ1, RQ2, and RQ3.
+
+\begin{enumerate}[nosep]
+  \item Using the 10\,GB synthetic file from P1.1, run and record wall-clock
+    time and peak RSS for each of the following scenarios:
+    \begin{itemize}[nosep]
+      \item \texttt{verify\_dataset} (full Merkle re-hash) vs.\ existing
+        flat \texttt{verify\_dataset()} on the same file,
+      \item \texttt{verify\_chunk} for a single chunk (demonstrates partial
+        verification; flat hashing cannot do this),
+      \item companion dataset I/O cost vs.\ attribute-only storage at chunk
+        counts $N \in \{16,\,256,\,1{,}024,\,65{,}536\}$.
+    \end{itemize}
+  \item Repeat on a real NOAA dataset.
+  \item Save all raw numbers, the hostname, CPU model, and disk type to
+    \texttt{benches/results/phase1-\$(hostname).csv} and commit the file.
+  \item \emph{Done when:} CSV files are committed; numbers are ready to
+    paste into the paper's evaluation tables (\S\ref{sec:experiments}).
+\end{enumerate}
+
+%% ── Phase 2 ──────────────────────────────────────────────────────────────────
 \subsection{Phase 2: Security Contributions and Evaluation (Months 4--7)}
 
+\noindent\textit{Background reading before starting Phase~2:} review
+\S\ref{sec:pq-hybrid} (hybrid signature construction), \S\ref{sec:filter-order}
+(Encrypt-then-MAC ordering), \S\ref{sec:nonce} (nonce derivation), and
+\S\ref{sec:security-analysis} (game-based argument structure).
+
+%% ── P2.1 ──────────────────────────────────────────────────────────────────
+\paragraph{P2.1$\star$\enspace Hybrid Ed25519~$+$~ML-DSA-65 signing
+(Weeks~1--4 of Phase~2, \textbf{Move~2}).}
+This is the second primary research contribution: a post-quantum-safe signing
+scheme that attaches a non-repudiable author identity to each Merkle root and
+survives the 50-year archival timescales typical of scientific data.
+
 \begin{enumerate}[nosep]
-  \item \textbf{Hybrid signing (Move~2):} implement
-    Ed25519~$+$~ML-DSA-65 signed roots over the canonical payload
-    $R = \text{root} \,\|\, \text{companion\_hash} \,\|\, v_\text{dataset}
-    \,\|\, \tau \,\|\, \text{AlgID}$ (\S\ref{sec:pq-hybrid}), with Ed25519~$+$~SLH-DSA-128s
-    available as an alternative. Measure end-to-end sign/verify cost,
-    signature and public-key size, and object-header impact at
-    $10^4$--$10^5$ datasets per file and $10^4$--$10^7$ chunks per dataset
-    (10\,GB--10\,TB at 1\,MB chunk size; RQ7) on x86-64 (with and without AVX-512) and ARM.
-  \item Implement ChaCha20-Poly1305 as the primary AEAD encryption filter,
-    including the version-counter-based nonce derivation scheme
-    (\S\ref{sec:nonce}) and the AEAD-tag~$+$~version-counter binding into
-    the Merkle leaf hash (\S\ref{sec:signing}). The DEK / KEK / HKDF baseline
-    key management is implemented to the level required to run encrypted
-    end-to-end experiments; the broader key-management design is deferred to
-    the C~HDF5 design document.
-  \item \textbf{Security analysis (Move~4):} produce the
-    Bellare--Namprempre-style game-based argument
-    (\S\ref{sec:security-analysis}) for the EtM~$+$~version-counter~$+$
-    hybrid-signed-root construction. The Tamarin model is undertaken as a
-    stretch deliverable if the schedule permits.
-  \item \textbf{Adversarial red-team study (Move~3):} execute the white-box
-    attack suite of \S\ref{sec:adversarial} on NOAA and EQSIM datasets,
-    covering T1--T8 plus the subset-extraction attack classes. Report the
-    detected/undetected matrix and root-cause-analyze any successful attacks.
-  \item \textbf{Cloud object-store evaluation (Move~6):} implement the
-    companion-dataset proof retrieval over S3 range-GETs (via the existing
-    cloud read paths in ClawHDF5) and run the intra-region and
-    cross-region WAN measurements of \S\ref{sec:cloud-eval}. The HSDS and
-    h5coro APIs serve as deployment references but are not modified as part
-    of this work.
-  \item Produce a \textbf{design document for C HDF5 integration} specifying:
-    Merkle tree hybrid storage format (root-hash attribute plus companion
-    dataset, with attribute-only fallback for small datasets), proposed
-    HDF5 API additions (\texttt{H5Dverify\_chunk},
-    \texttt{H5Dextract\_subset}, \texttt{H5Fget\_integrity\_root}),
-    companion dataset preservation semantics for copy/subset operations,
-    crash consistency write-ordering protocol (chunk $\to$ companion
-    $\to$ root attribute), filter pipeline ordering requirements, and the
-    on-disk layout of the hybrid signed-root attribute.
-  \item Write an RFC-style document for the HDF5 community.
+  \item Create a \texttt{clawhdf5-sign} crate (or module inside
+    \texttt{clawhdf5-format}). Add Cargo dependencies:
+    \texttt{ed25519-dalek} and either \texttt{ml-dsa} or
+    \texttt{pqcrypto-mldsa}.
+  \item Implement the canonical payload encoder
+    (see \S\ref{sec:pq-hybrid} for field definitions):
+\begin{lstlisting}
+fn canonical_payload(
+    root:           &[u8; 32],
+    companion_hash: &[u8; 32],
+    version:        u64,       // dataset version counter
+    timestamp:      u64,       // Unix seconds
+    alg_id:         HashAlg,
+) -> Vec<u8>
+// Returns: big-endian fixed-width binary encoding, no separators.
+\end{lstlisting}
+  \item Implement \texttt{sign\_root(payload: \&[u8], ed\_key:
+    \&Ed25519SigningKey, ml\_key: \&MlDsaPrivateKey) -> HybridSignature}.
+    Produce both signatures independently over the same payload and store
+    them concatenated with a 1-byte version tag in the HDF5 attribute
+    \texttt{\_merkle\_sig} on the dataset.
+  \item Implement \texttt{verify\_sig(payload: \&[u8], sig:
+    \&HybridSignature, ed\_pub: \&Ed25519VerifyingKey, ml\_pub:
+    \&MlDsaPublicKey) -> Result<(), SigError>}. \textbf{Require both
+    signatures to be valid}; accept the payload only if neither fails.
+  \item Measure sign and verify latency on x86-64 (with and without
+    AVX-512) and on ARM. Vary dataset size from $10^4$ to $10^7$ chunks.
+    Record signature size, public-key size, and object-header size impact
+    (RQ7). Save to \texttt{benches/results/signing-\$(hostname).csv}.
+  \item \emph{Done when:} Round-trip sign/verify test passes; a test with
+    one byte of the payload modified returns
+    \texttt{Err(SigError::InvalidSignature)}; benchmarks are committed.
 \end{enumerate}
 
+%% ── P2.2 ──────────────────────────────────────────────────────────────────
+\paragraph{P2.2\enspace ChaCha20-Poly1305 AEAD filter and nonce derivation
+(Weeks~2--5 of Phase~2).}
+Add the encryption layer to \texttt{clawhdf5-filters} and implement the
+version-counter nonce derivation that makes in-place chunk updates safe.
+Read \S\ref{sec:filter-order} and \S\ref{sec:nonce} before starting.
+
+\begin{enumerate}[nosep]
+  \item Add a \texttt{chacha20\_filter} module to \texttt{clawhdf5-filters}
+    with Cargo dependency \texttt{chacha20poly1305}.
+  \item Implement version-counter nonce derivation. The nonce for encrypting
+    chunk~$i$ at write number~$v$ is:
+    $\mathit{nonce} = \mathrm{BLAKE3\text{-}derive}(\mathrm{DEK},\;
+    \mathit{chunk\_idx} \,\|\, v_\mathrm{chunk})$.
+    The per-chunk write counter $v_\mathrm{chunk}$ is stored as a
+    \texttt{u32} in the companion dataset alongside each leaf hash.
+    \textbf{Increment and persist $v_\mathrm{chunk}$ before writing the
+    encrypted chunk}; a nonce must never be reused under the same DEK.
+  \item Enforce the Encrypt-then-MAC pipeline order for filters:
+    compress $\to$ shuffle $\to$ encrypt. The Merkle leaf hash must be
+    computed over the ciphertext output of the filter chain, not over the
+    plaintext (\S\ref{sec:filter-order}).
+  \item Bind the AEAD authentication tag and the version counter into the
+    Merkle leaf:
+    $\mathrm{leaf}[i] = H\!\left(\texttt{0x00} \,\|\,
+    \mathrm{ciphertext} \,\|\, \mathrm{tag} \,\|\, v_\mathrm{chunk}\right)$.
+  \item Write an end-to-end encrypted test: write a 256-chunk encrypted
+    dataset, verify the Merkle tree, overwrite chunk~7 (which must increment
+    $v_\mathrm{chunk}[7]$ and update the leaf hash), then call
+    \texttt{verify\_dataset} and confirm the tree is still consistent.
+  \item \emph{Done when:} The end-to-end test passes. Add a short code
+    comment proving nonce reuse is impossible by construction (``nonce
+    reuse requires $v_\mathrm{chunk}$ rollback, which is prevented by
+    $\ldots$'').
+\end{enumerate}
+
+%% ── P2.3 ──────────────────────────────────────────────────────────────────
+\paragraph{P2.3\enspace Game-based security argument
+(Weeks~4--7 of Phase~2, \textbf{Move~4}).}
+This is a written deliverable, not a code task. Its goal is to give a
+rigorous argument that breaking the full scheme requires breaking one of
+its three components (AEAD, Merkle tree, or hybrid signature). Read
+\S\ref{sec:security-analysis} for the template.
+
+\begin{enumerate}[nosep]
+  \item Write the INT-CTXT (integrity under chosen-ciphertext attack) security
+    game for the combined EtM~$+$~version-counter~$+$~hybrid-signed-root
+    construction in the style of Bellare and Namprempre.
+  \item State the three component security assumptions: IND-CCA2 / INT-CTXT
+    for ChaCha20-Poly1305, collision resistance for the Merkle hash, and
+    CMA (chosen-message attack) security for Ed25519 and ML-DSA-65.
+  \item Give the reduction argument: an adversary who forges an
+    integrity proof for a modified file must either (a)~find a hash
+    collision, (b)~decrypt and re-encrypt a chunk without the DEK, or
+    (c)~forge a signature without the private key.
+  \item Write the argument as a self-contained appendix section in the
+    paper draft and request a senior-researcher review before finalizing.
+  \item \emph{Done when:} The section is reviewed and the paper's
+    \S\ref{sec:security-analysis} is complete.
+\end{enumerate}
+
+%% ── P2.4 ──────────────────────────────────────────────────────────────────
+\paragraph{P2.4$\star$\enspace Adversarial red-team study
+(Weeks~5--9 of Phase~2, \textbf{Move~3}).}
+This is the third primary research contribution. Attempt to break the
+implementation on real scientific datasets using the eight threat classes
+defined in \S\ref{sec:threat} (T1--T8).
+
+\begin{enumerate}[nosep]
+  \item Add an \texttt{attack-harness} binary to the repository. Each attack
+    opens a test HDF5 file, performs one targeted modification using raw
+    file I/O (bypassing ClawHDF5), then calls the verification API and
+    asserts the expected result.
+  \item Implement and run each attack class on the NOAA dataset:
+    \begin{itemize}[nosep]
+      \item \textbf{T1} (storage tampering): overwrite raw chunk bytes using
+        a hex editor; \texttt{verify\_chunk} must detect it.
+      \item \textbf{T2} (silent corruption): flip one bit in the companion
+        dataset; \texttt{verify\_root} must detect it via the
+        companion-integrity hash.
+      \item \textbf{T3} (root substitution): replace \texttt{\_merkle\_root}
+        with a freshly computed root for the tampered file;
+        \texttt{verify\_sig} must reject it (no valid signature on the
+        new root).
+      \item \textbf{T4} (replay): copy the \texttt{\_merkle\_sig} from an
+        older file version onto the current file; the version counter in
+        the canonical payload must cause rejection.
+      \item \textbf{T5--T8}: metadata tampering, missing-chunk substitution,
+        and subset-extraction attacks as defined in \S\ref{sec:adversarial}.
+    \end{itemize}
+  \item Repeat the full harness on the EQSIM dataset.
+  \item Record the detected/undetected result for each attack on each
+    dataset in \texttt{attack-results/matrix.csv}. Any \emph{undetected}
+    result requires either a code fix or a documented limitation explaining
+    why the attack is out of scope.
+  \item \emph{Done when:} All T1--T8 attacks are detected on both datasets;
+    the matrix CSV is committed with zero unresolved \emph{undetected} entries.
+\end{enumerate}
+
+%% ── P2.5 ──────────────────────────────────────────────────────────────────
+\paragraph{P2.5\enspace Cloud / WAN evaluation
+(Weeks~8--11 of Phase~2, \textbf{Move~6}).}
+Measure proof-path retrieval latency over S3 range-GETs. Read
+\S\ref{sec:cloud-eval} for the full measurement protocol.
+
+\begin{enumerate}[nosep]
+  \item Wire the companion-dataset proof retrieval into the S3 range-GET
+    path already present in \texttt{clawhdf5-io}. A single proof path for
+    one chunk requires only $O(\log N)$ 32-byte node reads; issue them as
+    one range request covering the relevant slice of the companion dataset.
+  \item Upload representative test files (1\,GB and a larger surrogate for
+    1\,TB-scale behavior) to the S3 test bucket.
+  \item Run the intra-region and cross-region WAN measurements from
+    \S\ref{sec:cloud-eval}: record first-chunk proof latency, full-dataset
+    verify latency, and total bytes transferred per verification call.
+  \item Save results to \texttt{benches/results/phase2-cloud.csv} and commit.
+  \item \emph{Done when:} CSV is committed; numbers are ready for the
+    paper's cloud-evaluation table.
+\end{enumerate}
+
+%% ── P2.6 ──────────────────────────────────────────────────────────────────
+\paragraph{P2.6\enspace C~HDF5 integration design document
+(Weeks~10--12 of Phase~2).}
+A technical specification describing how the Merkle-tree storage format
+and verification API would be added to the official C~HDF5 library.
+
+\begin{enumerate}[nosep]
+  \item Describe the on-disk layout: root-hash attribute
+    (\texttt{\_merkle\_root}) plus companion dataset
+    (\texttt{/\_merkle/\{name\}}), with attribute-only fallback for
+    $N \leq 256$ chunks (\S\ref{sec:merkle-storage}).
+  \item Specify proposed new public API functions:
+    \texttt{H5Dverify\_chunk},
+    \texttt{H5Dextract\_\allowbreak{}subset}, and
+    \texttt{H5Fget\_\allowbreak{}integrity\_root},
+    with C function signatures and error-code semantics.
+  \item Specify companion-dataset preservation semantics for
+    \texttt{h5copy}, \texttt{h5repack}, and hyperslab-copy operations
+    (the companion must be updated atomically with the data).
+  \item Specify the crash-consistency write order:
+    chunks $\to$ companion dataset $\to$ root attribute. Writes in the
+    reverse order must never be generated; document how each API call
+    enforces this.
+  \item Specify filter-pipeline ordering requirements from
+    \S\ref{sec:filter-order} and the on-disk layout of the hybrid
+    signed-root attribute.
+  \item Get an internal review from a senior team member before submitting.
+\end{enumerate}
+
+%% ── P2.7 ──────────────────────────────────────────────────────────────────
+\paragraph{P2.7\enspace HDF5 community RFC (Weeks~11--13 of Phase~2).}
+
+\begin{enumerate}[nosep]
+  \item Summarize the on-disk format and proposed API from P2.6 in a
+    self-contained document without implementation details or proofs.
+    Target length: 4--6 pages.
+  \item Post to the HDF5 forum and record all substantive feedback in a
+    \texttt{rfc/feedback.md} file in the repository.
+  \item \emph{Done when:} RFC is posted and the feedback file is committed.
+\end{enumerate}
+
+%% ── Phase 3 ──────────────────────────────────────────────────────────────────
 \subsection{Phase 3 / Stretch}
 
-\begin{enumerate}[nosep, resume]
-  \item \textbf{Append-only log Merkle mode (Move~5)}: a
-    Certificate-Transparency-style variant supporting consistency proofs
-    between dataset versions (\emph{``version $n$ is a true prefix of version
-    $m$''}), targeting time-series and streaming science workloads.
-  \item \textbf{Tamarin symbolic model} of the verification protocol, with
-    machine-checked authenticity, freshness, and subset-soundness lemmas;
-    intended to elevate the security analysis from game-based argument to
-    machine-checked proof for a security-venue paper submission.
-  \item \textbf{Sigstore transparency-log publication} for hybrid signed
-    roots, including Rekor inclusion proof storage and RFC~3161 TSA token
-    storage for Long-Term Validation.
-  \item \textbf{AES-256-CTR~$+$~HMAC-SHA-256 filters} for FIPS-required
-    deployments where ChaCha20-Poly1305 is not acceptable.
-  \item \textbf{Provenance-graph integration}: bind the Merkle root as a
+These items are cut-able without affecting the three primary paper
+contributions. Begin them only after Phase~2 is complete and on schedule.
+Items are in priority order.
+
+\begin{enumerate}[nosep]
+  \item \textbf{Append-only log Merkle mode (Move~5):} implement the
+    Certificate-Transparency-style append-only variant: each new dataset
+    version appends leaves and
+    stores a consistency proof that version~$n$ is a true prefix of
+    version~$m$. Targets time-series and streaming science workloads.
+  \item \textbf{Tamarin symbolic model:} encode the verification
+    protocol in Tamarin~Prover and prove authenticity, freshness, and
+    subset-soundness lemmas mechanically. This elevates the P2.3
+    game-based argument to a machine-checked proof suitable for a
+    security-venue submission.
+  \item \textbf{Sigstore / Rekor transparency-log integration:} publish
+    hybrid signed roots to a Rekor log and store RFC~3161 TSA tokens for
+    Long-Term Validation.
+  \item \textbf{AES-256-CTR~$+$~HMAC-SHA-256 filters:} FIPS-compliant
+    alternative to ChaCha20-Poly1305 for deployments subject to FIPS~140-3.
+  \item \textbf{Provenance-graph integration:} bind the Merkle root as a
     W3C PROV~\cite{w3cprov} \texttt{prov:Entity} identifier so that
     derivation chains across datasets reference content-stable, signed
     roots.
@@ -2500,7 +2866,7 @@ get the full story.
 \begin{table}[h]
 \centering
 \small
-\begin{tabular}{@{}p{0.9cm}p{7.0cm}cccc@{}}
+\begin{tabular}{@{}p{1.1cm}p{6.8cm}cccc@{}}
 \toprule
 \textbf{Task} & \textbf{Description} &
   \textbf{\S4} & \textbf{\S5} & \textbf{\S7} & \textbf{\S8} \\
