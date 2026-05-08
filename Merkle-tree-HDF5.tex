@@ -286,8 +286,8 @@ physical drive. The HDF5 fletcher32 chunk filter is in this family. However,
 all listed codes are invertible in closed form by an adversary.
 CRC-family codes are linear over $\mathrm{GF}(2)$ (XOR arithmetic); an attacker
 uses elementary linear algebra over the binary field to compute a tail correction
-preserving the checksum. Fletcher-32 and Adler-32 are linear over a small
-modulus ($2^{16}-1$ and $65521$ respectively), which similarly admits a
+preserving the checksum. Adler-32 and Fletcher-32 are linear over a small
+modulus ($65521$ and $2^{16}-1$ respectively), which similarly admits a
 closed-form correction---no brute-force search is required in either case.
 They therefore detect
 \emph{accidental} corruption only, not \emph{adversarial} tampering, and
@@ -721,12 +721,12 @@ R2 incremental extend   & \checkmark & \checkmark & \checkmark$^d$ & MSM$^a$ & M
 R3 in-place update      & $\times$   & \checkmark & \checkmark$^d$ & MSM$^a$ & MSM$^a$ & IVC$^b$    & \checkmark & \checkmark \\
 R4 tamper localization  & $\times$   & \checkmark & \checkmark & $\times$   & partial    & $\times$   & \checkmark & \checkmark \\
 R5a chunk authenticity  & $\times$   & \checkmark$^e$ & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
-R5b coverage proof      & $\times$   & $\times$   & manifest$^f$ & complex    & \checkmark & \checkmark & $\times$   & \checkmark \\
+R5b coverage proof      & $\times$   & $\times$   & manifest$^f$ & complex    & \checkmark & \checkmark & $\times$   & \checkmark$^k$ \\
 R6 public verifiability & \checkmark & $\times$   & \checkmark & \checkmark & \checkmark & \checkmark & vendor     & \checkmark \\
 R7 subset-proof size    & ---        & $16k$\,B   & $64k$\,B$^g$ & $O(1)$  & $O(1)$    & $O(1)$     & ---        & $32k\log N$\,B \\
 R8 no trusted setup     & \checkmark & \checkmark & \checkmark & $\times$   & $\times$   & varies     & vendor     & \checkmark \\
 R9 PQ upgrade path      & \checkmark & \checkmark & $\dagger$  & $\times$   & $\times$   & STARK only & vendor     & \checkmark \\
-R10 HPC-feasible build  & \checkmark & \checkmark & 3\,h$^h$   & 3\,h$^a$   & 1\,s$^a$   & $>$24\,h$^b$ & \checkmark & 30\,s$^i$ \\
+R10 HPC-feasible build  & \checkmark & \checkmark & 3\,h$^h$   & 3\,h$^a$   & 30\,s$^a$  & $>$24\,h$^b$ & \checkmark & 30\,s$^i$ \\
 R11 distrib.\ parallel  & \checkmark & \checkmark & \checkmark & $\times$   & $\times$   & $\times$   & vendor     & \checkmark \\
 R12 struct.\ confid.    & $\times$   & $\times$   & $\times$   & $\times$   & $\times$   & $\times$   & $\times$   & opt-in$^j$ \\
 \bottomrule
@@ -738,8 +738,11 @@ for the Merkle baseline breakdown. ``vendor'' = depends on platform
 vendor; ``sample$^c$'' = sampling assurance only; ``MSM'' = $O(N)$
 multi-scalar multiplication required per update; ``IVC'' = incrementally
 verifiable computation step.
-$^a$~RSA accumulator and KZG: each update is one $O(N)$ exponentiation/MSM,
-$\sim$1\,s--3\,h on commodity HW.
+$^a$~RSA accumulator: each update is one $O(N)$ modular exponentiation,
+$\sim$30\,min--3\,h on commodity HW; KZG: one $O(N)$ multi-scalar multiplication
+over BLS12-381, $\sim$30\,s--30\,min on commodity HW (Pippenger, single core).
+$^k$~Merkle R5b: coverage proof requires the signed grid-hash~$+$~Merkle-path
+coverage certificate (\S\ref{sec:subset}), not raw inclusion proofs alone.
 $^b$~ZK folding step (e.g., Nova/HyperNova) takes $\sim$10\,ms per step;
 $10^7$ steps $\times$ 10\,ms $= 10^5$\,s $\approx 28$\,h ($>$24\,h).
 $^c$~PoR/PDP provides sampling-based assurance, not complete verification.
@@ -755,7 +758,8 @@ $^h$~ML-DSA-65 signing at $\sim$1\,ms/chunk $\times$ $10^7$ chunks
 $\approx$ 3\,CPU-hours.
 $^i$~Merkle baseline: $\sim$30\,s assumes a parallel HPC leaf-hashing pass
 across ${\sim}200$ cores of an HPC partition (${\sim}200 \times 1.5$\,GB/s $\approx$ 300\,GB/s
-aggregate via a parallel filesystem for 10\,TB);
+aggregate via a leadership-class parallel filesystem, e.g., DAOS on Aurora or
+Lustre on Frontier, for 10\,TB);
 tree aggregation over pre-computed leaf hashes adds $<1$\,s on a single core.
 $^j$~Merkle R12: structure confidentiality is \emph{opt-in} via
 PRF-masked null hashes ($H(\texttt{0x02}\,\|\,\text{PRF}(SK,\texttt{"null"}))$,
@@ -907,7 +911,7 @@ and privacy extensions (T6--T8):
     dataset) to force a fail-open downgrade to unauthenticated access, or
     alters the unencrypted algorithm identifiers in the root attribute to
     force the verifier to use a weaker cryptographic primitive (e.g.,
-    substituting \texttt{sha256-truncated-128} for \texttt{blake3}, or
+    downgrading the hash from \texttt{blake3} to \texttt{sha256-truncated-128}, or
     downgrading the AEAD from \texttt{AES-256-GCM} to \texttt{AES-128-GCM}).
     Unlike T1--T3, no signature forgery is required; the attack exploits
     verifier leniency toward missing or downgraded metadata.
@@ -1425,7 +1429,7 @@ $H(\texttt{0x02}\,\|\,\text{PRF}(SK,\texttt{"null"}))$
 and reconstruct the full tree topology without ever obtaining the DEK or
 decrypting any payload chunk.  The choice between DEK-derived and
 KEK-derived PRF nulls is a policy decision: DEK-derived maximizes
-confidentiality at the cost of excluding third-party auditors; SKderived
+confidentiality at the cost of excluding third-party auditors; SK-derived
 permits structural audits while still concealing chunk content.
 This trade-off is noted as a configuration concern in the security design document.
 The Structure Key mechanism is scoped as a design option within Phase~2
@@ -1785,7 +1789,8 @@ so the global tree itself imposes no object-header overhead.
 \paragraph{Why this still needs to be measured at HDF5 scale.}
 ML-DSA-65 signatures are $\sim$3.3~KB and public keys are $\sim$2~KB, versus
 64~B and 32~B for Ed25519. SLH-DSA signatures are larger still ($\sim$8~KB
-to $\sim$30~KB depending on parameters). Even with a single file-level
+to $\sim$50~KB depending on parameters; SLH-DSA-128s is $\sim$7.7~KB,
+SLH-DSA-256f reaches $\sim$49~KB). Even with a single file-level
 signature, the \emph{object-header encoding} of the file-level root attribute
 (which contains the root hash, companion integrity hash, version counter,
 timestamp, and the hybrid signature blob) must remain within HDF5's
@@ -1856,8 +1861,11 @@ authentication tag serves an analogous role:
 $H(\texttt{0x00} \,\|\, k \,\|\, \text{Ciphertext}_k \,\|\, \text{HMAC}_k \,\|\, v_k)$.
 For \emph{plaintext} (unencrypted) chunks, the leaf hash binds the raw chunk
 data and version counter directly:
-$H(\texttt{0x00} \,\|\, k \,\|\, \text{Chunk}_k \,\|\, v_k)$;
-the index~$k$ is bound in all cases to prevent position-swapping attacks.
+$H(\texttt{0x00} \,\|\, \text{len}(k) \,\|\, k \,\|\, \text{len}(\text{Chunk}_k) \,\|\,
+\text{Chunk}_k \,\|\, v_k)$;
+the same length-prefixing rules from above apply whenever the chunk payload
+may be variable-length (e.g., after compression is applied in the filter pipeline).
+The index~$k$ is bound in all cases to prevent position-swapping attacks.
 
 \paragraph{Stretch goal: Sigstore transparency log.}
 As an extension, the signed root may be published to a
@@ -2211,8 +2219,9 @@ pub struct MerkleTree {
 \end{lstlisting}
   \item Implement \texttt{MerkleTree::build(leaves: \&[[u8;32]], alg: HashAlg)
     -> Self}. \textbf{Tree shape:} scientific datasets rarely have
-    power-of-2 chunk counts. Pad the leaf array with \texttt{0x02} null
-    hashes (as defined in \S\ref{sec:merkle-storage}) up to the next power
+    power-of-2 chunk counts. Pad the leaf array with the computed null
+    sentinel $H(\texttt{0x02}\,\|\,\texttt{null})$ (as defined in
+    \S\ref{sec:merkle-storage}) up to the next power
     of~2 before building. This keeps the level-order index arithmetic
     ($\text{left} = 2i+1$, $\text{right} = 2i+2$) correct for all~$N$.
     Store the actual leaf count in \texttt{actual\_n} and the padded count
@@ -2359,6 +2368,9 @@ pub fn update_merkle(d: &Dataset, idx: usize, h: [u8;32]) -> Result<(), MerkleEr
   \item \texttt{verify\_chunk}: re-hashes the live chunk at index \texttt{idx},
     reads the $O(\log N)$ sibling hashes from the companion dataset, and walks
     the proof path to the root, comparing the recomputed root to the stored value.
+    If the WAL contains an uncommitted entry for \texttt{idx}, returns
+    \texttt{Err(MerkleError::NoncePending)} immediately (the chunk may be
+    partially written; the caller must replay or abort before verifying).
   \item \texttt{verify\_dataset}: re-hashes every chunk, rebuilds the tree
     from scratch, and compares the computed root to the stored root.
     This is the full $O(N)$ integrity check.
@@ -2552,7 +2564,7 @@ fn mock_dek() -> [u8; 32] {
     $\mathit{nonce} = \mathrm{BLAKE3\text{-}derive}(\mathrm{DEK},\;
     \mathit{chunk\_idx} \,\|\, v_\mathrm{chunk})$.
     The per-chunk write counter $v_\mathrm{chunk}$ is stored as a
-    \texttt{u32} in the companion dataset alongside each leaf hash.
+    \texttt{u64} in the companion dataset alongside each leaf hash.
     \textbf{Use the WAL protocol from \S\ref{sec:nonce}}: journal
     $(\mathit{chunk\_idx}, v_\text{new})$ to a crash-durable log
     \emph{before} deriving the nonce; write the chunk using $v_\text{new}$;
