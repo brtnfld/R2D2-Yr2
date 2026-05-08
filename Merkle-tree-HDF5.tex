@@ -254,7 +254,7 @@ The S2-D2 runtime consists of three components:
 \subsection{Asynchronous I/O for HDF5}
 
 Tang et al.~\cite{tang2022async} demonstrated transparent asynchronous I/O for
-HDF5 using background threads, achieving significant latency hiding for
+HDF5 uses background threads, achieving significant latency hiding for
 metadata operations. This work is relevant to eventual STS integration of the
 provenance operations developed in this proposal, but the STS prototype itself
 is outside the scope of this document.
@@ -263,10 +263,10 @@ is outside the scope of this document.
 \section{Survey of Tamper-Detection and Data-Integrity Methods}
 \label{sec:survey}
 
-Tamper detection and data integrity is a deep, mature research area spanning
+Tamper detection and data integrity are deep, mature research areas spanning
 cryptography, distributed systems, filesystems, archival storage, and
-blockchain. This section surveys the primitives and systems that could in
-principle be used to authenticate large scientific datasets such as those
+blockchain. This section surveys the primitives and systems that could, in
+principle, be used to authenticate large scientific datasets such as those
 held in HDF5. We organize the discussion by primitive class and conclude
 each subsection with the suitability of the approach for multi-terabyte,
 chunked, long-lived scientific data. \S\ref{sec:selection} then derives a
@@ -342,7 +342,7 @@ canonical secure pattern~\cite{bellare2000encrypt,bellare2000encryptmac}.
 \subsection{Classical asymmetric signatures}
 
 RSA-PSS, RSA-PKCS\#1, ECDSA over P-256 or secp256k1, and Ed25519/EdDSA
-\cite{rfc8032} provide non-repudiable signatures with public verifiability:
+\cite{rfc8032} provides non-repudiable signatures with public verifiability:
 anyone with the signer's public key can verify, and only the signer can
 produce a valid signature. Signatures are 64--512\,B per object. Signing one
 hash per dataset (or one hash per file) is well within the cost budget of any
@@ -360,7 +360,7 @@ scheme considered below; the design question is what they sign over.
 A cryptographically relevant quantum computer (CRQC) breaks RSA, DSA, ECDSA,
 and EdDSA via Shor's algorithm. Scientific datasets routinely retain value for
 30--100~years, so any signature placed today must be \emph{harvest-now,
-forge-later} resistant. In 2024 NIST officially standardized its first
+forge-later} resistant. In 2024, NIST officially standardized its first
 post-quantum signature schemes for general use: ML-DSA (Module-Lattice DSA,
 FIPS~204, formerly Dilithium)~\cite{fips204} and SLH-DSA (Stateless Hash-based
 DSA, FIPS~205, formerly SPHINCS$^+$)~\cite{fips205}. Stateful hash-based schemes XMSS~\cite{rfc8391}
@@ -379,13 +379,13 @@ in which each new value is committed by hashing it together with the previous
 one. Certificate Transparency~\cite{rfc6962,laurie2014certificate} extends
 this to a Merkle log of TLS certificate issuances, providing tamper-evident
 audit. Sigstore Rekor~\cite{newman2022sigstore} and
-Trillian~\cite{trillian} apply the same model to software-supply-chain
+Trillian~\cite{trillian} applies the same model to software-supply-chain
 artifacts. Append-only Merkle Mountain Ranges~\cite{mmr} amortize append cost
 better than balanced binary trees. Append-only logs are an excellent fit when
 the data model is itself an append-only stream (sensor logs, simulation
 checkpoints), but most HDF5 workloads also \emph{overwrite} chunks (e.g.,
 checkpoint/restart with correction of erroneous values). A pure append-only
-log model therefore does not capture HDF5 semantics on its own; we revisit
+log model, therefore, does not capture HDF5 semantics on its own; we revisit
 append-only mode as an optional layer in Phase~3.
 
 \subsection{Hash trees and authenticated data structures}
@@ -490,7 +490,7 @@ Enclaves provide hardware-isolated execution with remote attestation; TPM
 2.0~\cite{tpm2} and Linux IMA/EVM~\cite{sailer2004ima} provide measured-boot
 integrity tied to platform-binding keys. TEE-anchored memory integrity trees
 are also used inside the enclave itself. These mechanisms are powerful within
-a controlled platform but rely on recurrent vulnerability disclosures,
+a controlled platform but relies on recurrent vulnerability disclosures,
 vendor-specific attestation services, and the integrity of a particular
 hardware instance---assumptions incompatible with multi-decade archival of
 scientific data that may be read on platforms not yet built.
