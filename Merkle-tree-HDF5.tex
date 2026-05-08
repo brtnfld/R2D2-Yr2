@@ -409,6 +409,26 @@ cleanly onto HDF5 chunks. The major engineering questions are tree shape
 (balanced binary vs.\ SMT vs.\ Patricia), leaf encoding, and how to bind the
 tree to the underlying chunked container.
 
+\noindent\textbf{Overlay Merkle tree vs.\ in-format authenticated B-trees.}
+HDF5 uses internal B-trees extensively to track chunk allocations within the
+file (the Version~1 B-tree in the HDF5 specification manages chunk-storage
+indices for each dataset). Tamassia's authenticated data structure framework
+applies directly to B-trees, raising the question of whether an authenticated
+B-tree built on HDF5's existing chunk index would subsume the need for an
+external Merkle overlay. Three factors rule this out for our setting.
+First, HDF5's internal B-trees are highly mutable, deeply coupled to the
+library's metadata-management code, and among the most complex and brittle
+sections of the C~HDF5 library; augmenting their node structure to carry hash
+accumulators would require invasive changes to the lowest-level format layer
+and would break forward compatibility with existing readers. Second, the B-tree
+topology is determined by the HDF5 storage allocator, not by the logical chunk
+grid, so leaf positions do not align with chunk boundaries in a way that admits
+clean hyperslab-aligned proofs. Third, a companion-dataset overlay is
+format-agnostic: it can be constructed without modifying the library,
+is embarrassingly parallel across MPI ranks (each rank hashes its own chunk
+subset independently, and results are reduced via $O(\log P)$ collective
+operations), and carries no format-compatibility risk for existing HDF5 files.
+
 \subsection{Cryptographic accumulators}
 
 RSA accumulators (Benaloh--de Mare~\cite{benaloh1993accumulator}) and
@@ -540,6 +560,19 @@ absent integrity primitives. None of the existing scientific or analytics
 formats provides Merkle-tree-based partial verification, incremental signing,
 or tamper localization at sub-dataset granularity, and none provides a
 post-quantum signing path.
+Emerging \emph{virtualized} formats---Kerchunk~\cite{kerchunk} and its
+successor VirtualiZarr---map chunk coordinates to byte ranges inside legacy
+HDF5/NetCDF files stored on S3-compatible object storage, enabling cloud-native
+access to archival data without format conversion; however, they inherit the
+integrity limitations of the underlying objects and add no cryptographic
+verification layer of their own. Modern array engines such as
+TileDB~\cite{tiledb2020} provide high-performance chunked storage for
+multi-dimensional arrays in genomics and geospatial workloads and support
+at-rest AES-256-GCM encryption at the tile level, but rely on the underlying
+cloud store for object-level integrity and provide no hierarchical
+verifiable-subset capability---a verifier wishing to confirm the integrity of
+an arbitrary sub-array must re-read and re-authenticate the entire relevant
+tile set.
 
 \subsection{Provenance, lineage, and freshness}
 
@@ -575,7 +608,7 @@ formalizes the requirements and selects from this shortlist.
 \subsection{Requirements}
 \label{sec:requirements}
 
-We translate the problem statement of \S\ref{sec:intro} into ten concrete
+We translate the problem statement of \S\ref{sec:intro} into twelve concrete
 requirements that any candidate primitive must meet for the HDF5 setting:
 
 \begin{description}[nosep]
@@ -637,12 +670,33 @@ requirements that any candidate primitive must meet for the HDF5 setting:
     Initial commitment over a multi-terabyte dataset must be feasible at
     memory-bandwidth speeds on commodity HPC hardware, i.e., a small
     constant multiple of a single linear pass over the data.
+  \item[R11: Distributed parallel construction.]
+    In HPC workflows, $P$ compute nodes write disjoint chunk subsets to the
+    same dataset concurrently via MPI-IO. Leaf-level hash computation must be
+    \emph{embarrassingly parallel}: each node independently hashes its own
+    chunks, and the tree must be reducible via $O(\log P)$ rounds of MPI
+    collective operations with no global lock on the commitment structure.
+    Primitives that require a sequential multi-scalar multiplication (MSM)
+    across all $N$ chunks to commit or update---RSA accumulators, KZG
+    polynomial commitments, ZK-SNARK circuits---are disqualified by this
+    requirement as decisively as by R10.
+  \item[R12: Structure confidentiality for sparse encrypted datasets.]
+    For encrypted datasets, the integrity structure must not reveal the
+    physical sparsity pattern (allocation grid) of the underlying data to an
+    observer who cannot decrypt the payload chunks. Equivalently: an
+    authenticated observer who knows which leaves are null vs.\ populated
+    gains information about dataset geometry (e.g., geographic boundaries in
+    sparse climate data, non-zero regions in genomic arrays) independent of
+    the payload. The construction must either hide null-leaf positions or
+    provide a mechanism---using a key distinct from the payload DEK---by which
+    authorized auditors can distinguish null from populated regions without
+    decrypting chunk content.
 \end{description}
 
 \subsection{Comparison of candidate primitives}
 
 Table~\ref{tab:integrity-comparison} maps the seven alternative classes plus
-Merkle tree (eight columns total) identified in the survey against these ten
+Merkle tree (eight columns total) identified in the survey against these twelve
 requirements.
 
 \begin{table}[h]
@@ -673,9 +727,11 @@ R7 subset-proof size    & ---        & $16k$\,B   & $64k$\,B$^g$ & $O(1)$  & $O(
 R8 no trusted setup     & \checkmark & \checkmark & \checkmark & $\times$   & $\times$   & varies     & vendor     & \checkmark \\
 R9 PQ upgrade path      & \checkmark & \checkmark & $\dagger$  & $\times$   & $\times$   & STARK only & vendor     & \checkmark \\
 R10 HPC-feasible build  & \checkmark & \checkmark & 3\,h$^h$   & 3\,h$^a$   & 1\,s$^a$   & $>$24\,h$^b$ & \checkmark & 30\,s$^i$ \\
+R11 distrib.\ parallel  & \checkmark & \checkmark & \checkmark & $\times$   & $\times$   & $\times$   & vendor     & \checkmark \\
+R12 struct.\ confid.    & $\times$   & $\times$   & $\times$   & $\times$   & $\times$   & $\times$   & $\times$   & opt-in$^j$ \\
 \bottomrule
 \end{tabular}}
-\caption{Candidate primitives against the requirements of
+\caption{Candidate primitives against the twelve requirements of
 \S\ref{sec:requirements}. Build-cost row (R10) reports order-of-magnitude
 build time at $N=10^7$ chunks (10\,TB at 1\,MB chunks); see footnote~$^i$
 for the Merkle baseline breakdown. ``vendor'' = depends on platform
@@ -701,6 +757,10 @@ $^i$~Merkle baseline: $\sim$30\,s assumes a parallel HPC leaf-hashing pass
 across ${\sim}200$ cores of an HPC partition (${\sim}200 \times 1.5$\,GB/s $\approx$ 300\,GB/s
 aggregate via a parallel filesystem for 10\,TB);
 tree aggregation over pre-computed leaf hashes adds $<1$\,s on a single core.
+$^j$~Merkle R12: structure confidentiality is \emph{opt-in} via
+PRF-masked null hashes ($H(\texttt{0x02}\,\|\,\text{PRF}(SK,\texttt{"null"}))$,
+where $SK$ is a Structure Key derived from the KEK); see \S\ref{sec:merkle-storage}.
+No other candidate provides even an opt-in path to structure hiding.
 $\dagger$~Per-chunk signatures upgrade to PQ by swapping the scheme but
 remain storage-prohibitive (33\,GB/dataset at $N=10^7$).}
 \label{tab:integrity-comparison}
@@ -711,7 +771,7 @@ remain storage-prohibitive (33\,GB/dataset at $N=10^7$).}
 
 A hash tree (binary or sparse Merkle tree) over chunk hashes, with the root
 signed by a hybrid classical~+~PQ signature, is the only candidate satisfying
-R1--R10 \emph{without trusted setup or post-quantum liability}:
+R1--R12 \emph{without trusted setup or post-quantum liability}:
 
 \begin{itemize}[nosep]
   \item Subset and coverage proofs of size $O(k\log N)$ (R5a, R5b, R7) come
@@ -782,7 +842,7 @@ R6 in spirit and R8 in letter.
 Merkle is not the \emph{only} primitive in absolute terms that satisfies R1
 through R7---Verkle is competitive there, and BLS-aggregated per-chunk
 signatures are competitive on R1--R6. What distinguishes Merkle is that it
-is the only primitive achieving R1--R10 \emph{simultaneously, without a
+is the only primitive achieving R1--R12 \emph{simultaneously, without a
 trusted-setup ceremony and without a pairing- or factoring-based primitive
 that Shor's algorithm breaks}. R8 and R9 are the discriminating
 requirements, and they are forced by the multi-decade archival horizon of
@@ -2829,7 +2889,7 @@ trees and authenticated data structures (ZFS, Git, IPFS, CT, Sigstore, Tamassia)
 accumulators (RSA, bilinear), polynomial/vector commitments (KZG, Verkle, IPA,
 STARK), ZKP and PoR/PDP, TEE/fs-verity, cloud-store integrity, blockchain,
 scientific-format integrity (NetCDF, Zarr, ASDF, Parquet), provenance (W3C PROV).
-Then: requirements R1--R10 derived from HDF5 access patterns and archival
+Then: requirements R1--R12 derived from HDF5 access patterns and archival
 horizon; comparison table; selection of Merkle-tree-with-signed-root.
 
 \noindent\textbf{Writing strategy:} The survey~$\rightarrow$~requirements
