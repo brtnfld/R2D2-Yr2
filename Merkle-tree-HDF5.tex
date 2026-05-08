@@ -2127,10 +2127,14 @@ integration are deferred to Phase~3 to preserve focus on the critical path.
 %% ── Phase 1 ──────────────────────────────────────────────────────────────────
 \subsection{Phase 1: Core Architecture and Verifiable Subset (Months 1--4)}
 
-\noindent\textit{Background reading before starting Phase~1:} review
-\S\ref{sec:background} (ClawHDF5 crate layout), \S\ref{sec:merkle} (tree
-construction and domain-separation rules), and \S\ref{sec:merkle-storage}
-(hybrid attribute~$+$~companion-dataset layout).
+\noindent\textit{Background reading before starting Phase~1:} read all of
+\S\ref{sec:background} (HDF5 data model, chunked storage, S2-D2 framework
+architecture, and ClawHDF5 crate layout), then all of \S\ref{sec:merkle}
+(the full Merkle-Tree Provenance design: threat model, why integrity is
+independent of encryption, tree construction, hash algorithm selection,
+verifiable subset extraction, storage layout, and signing), with particular
+attention to \S\ref{sec:merkle-storage} (hybrid attribute~$+$~companion-dataset
+layout and domain-separation prefixes \texttt{0x00}/\texttt{0x01}/\texttt{0x02}).
 
 %% ── P1.1 ──────────────────────────────────────────────────────────────────
 \paragraph{P1.1\enspace Platform evaluation / go--no-go gate (Weeks~1--2).}
@@ -2197,6 +2201,11 @@ pub struct MerkleTree {
 
 %% ── P1.3 ──────────────────────────────────────────────────────────────────
 \paragraph{P1.3\enspace Hybrid storage layout (Weeks~4--6).}
+\textit{Dependency:} P1.3 can begin as soon as P1.2 steps~1--3 (the
+\texttt{MerkleTree} struct and domain-separation logic) are complete, which
+should happen by the end of Week~3. P1.2's benchmark runs (step~5) may proceed
+in parallel with P1.3.
+
 Persist the Merkle tree alongside its dataset in the HDF5 file using the
 two-tier layout defined in \S\ref{sec:merkle-storage}: a small root-hash
 HDF5 attribute for fast checks, plus a companion dataset for the full node
@@ -2350,10 +2359,15 @@ verification to answer RQ1, RQ2, and RQ3.
 %% ── Phase 2 ──────────────────────────────────────────────────────────────────
 \subsection{Phase 2: Security Contributions and Evaluation (Months 4--7)}
 
-\noindent\textit{Background reading before starting Phase~2:} review
-\S\ref{sec:pq-hybrid} (hybrid signature construction), \S\ref{sec:filter-order}
-(Encrypt-then-MAC ordering), \S\ref{sec:nonce} (nonce derivation), and
-\S\ref{sec:security-analysis} (game-based argument structure).
+\noindent\textit{Background reading before starting Phase~2:} read
+\S\ref{sec:signing} (Signing Authority and Key Management), paying particular
+attention to the ``Post-quantum hybrid signing'' paragraph (\S\ref{sec:pq-hybrid})
+for the hybrid Ed25519~$+$~ML-DSA-65 construction and payload encoding; then
+\S\ref{sec:filter-order} (Encrypt-then-MAC filter pipeline ordering and why
+hash-then-encrypt is insecure), \S\ref{sec:nonce} (version-counter nonce
+derivation and why it prevents nonce reuse on in-place updates), and
+\S\ref{sec:security-analysis} (the game-based argument template, including the
+three component security assumptions).
 
 %% ── P2.1 ──────────────────────────────────────────────────────────────────
 \paragraph{P2.1$\star$\enspace Hybrid Ed25519~$+$~ML-DSA-65 signing
@@ -2461,6 +2475,13 @@ its three components (AEAD, Merkle tree, or hybrid signature). Read
 %% ── P2.4 ──────────────────────────────────────────────────────────────────
 \paragraph{P2.4$\star$\enspace Adversarial red-team study
 (Weeks~5--9 of Phase~2, \textbf{Move~3}).}
+\textit{Dependency:} P2.1 (signing) must be complete before starting
+(done by end of Week~4). P2.2 (AEAD filter) finishes at end of Week~5;
+attacks involving the encryption layer (T1 compressed-payload attacks, T4
+nonce-reuse attempts) should be deferred to Week~6 if P2.2 is not yet
+merged, while plaintext-dataset attacks (T2, T3, T5--T8) can begin at
+Week~5.
+
 This is the third primary research contribution. Attempt to break the
 implementation on real scientific datasets using the eight threat classes
 defined in \S\ref{sec:threat} (T1--T8).
