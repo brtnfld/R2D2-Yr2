@@ -1648,7 +1648,37 @@ Key described in~\S\ref{sec:signing}. The version counter is stored in the
 companion Merkle dataset alongside the tree nodes (one 64-bit counter per
 leaf, adding 8\,bytes per chunk of overhead). Every write to chunk~$k$---whether
 an append or an in-place update---increments $v$, guaranteeing a unique nonce
-per (key, chunk, version) triple. The version counter also serves double duty
+per (key, chunk, version) triple.
+
+\noindent\textbf{Crash-safe version counter increments (WAL requirement).}
+A subtle conflict exists between the crash-consistency write order of
+\S\ref{sec:merkle-storage} (``write chunk first, then update companion
+tree'') and the nonce-safety requirement above (``$v$ must be incremented
+\emph{before} the chunk is encrypted and written''). If $v$ is incremented
+only in the companion dataset after the chunk write, a crash between the
+chunk write and the companion update leaves $v$ at its old value; the next
+write to the same chunk would then re-derive the same nonce, catastrophically
+reusing the keystream. Conversely, incrementing $v$ in the companion dataset
+\emph{before} the chunk write violates the crash-consistency write order.
+
+The resolution is a \textbf{Write-Ahead Log (WAL)} for version counters:
+\begin{enumerate}[nosep]
+  \item Append a journal record $(\mathit{chunk\_idx},\; v_\text{new})$ to a
+    crash-durable WAL (e.g., a small dedicated HDF5 dataset or an OS-level
+    append-only file) \emph{before} computing the nonce.
+  \item Derive the nonce using $v_\text{new}$, encrypt the chunk, and write
+    the ciphertext.
+  \item Promote the journal record into the companion dataset (update the
+    leaf's stored version counter to $v_\text{new}$) and recompute the
+    Merkle path to the root.
+  \item Mark the journal record as committed.
+\end{enumerate}
+On crash recovery, any uncommitted journal record indicates an in-progress
+write: the system replays the chunk encryption (using the journaled
+$v_\text{new}$) and completes the companion update before declaring the
+file consistent. This guarantees the nonce is never reused regardless of
+crash timing. The C~HDF5 design document (\S\ref{sec:impl}, Phase~2)
+will specify the exact WAL format and interaction with HDF5 flush semantics. The version counter also serves double duty
 for rollback detection (threat~T4 in~\S\ref{sec:threat}): the dataset-level
 version in the signed root is the maximum of all per-chunk versions, providing
 a monotonic timeline. The locally stored high-resolution timestamp~$\tau$
@@ -2171,20 +2201,39 @@ performance--compliance tradeoffs among SHA-256, BLAKE3, and K12.
 pub enum HashAlg { Sha256, Blake3, K12 }
 
 pub struct MerkleTree {
-    pub leaves: Vec<[u8; 32]>,  // leaf hashes, left to right
-    pub nodes:  Vec<[u8; 32]>,  // complete binary tree, level-order
-    pub root:   [u8; 32],
-    pub alg:    HashAlg,
+    pub leaves:     Vec<[u8; 32]>,  // leaf hashes, left to right
+    pub nodes:      Vec<[u8; 32]>,  // complete binary tree, level-order
+    pub root:       [u8; 32],
+    pub alg:        HashAlg,
+    pub padded_n:   usize,          // next power of 2 >= leaves.len()
+    pub actual_n:   usize,          // true leaf count (chunks in dataset)
 }
 \end{lstlisting}
   \item Implement \texttt{MerkleTree::build(leaves: \&[[u8;32]], alg: HashAlg)
-    -> Self}. Apply domain-separation prefixes exactly as specified in
+    -> Self}. \textbf{Tree shape:} scientific datasets rarely have
+    power-of-2 chunk counts. Pad the leaf array with \texttt{0x02} null
+    hashes (as defined in \S\ref{sec:merkle-storage}) up to the next power
+    of~2 before building. This keeps the level-order index arithmetic
+    ($\text{left} = 2i+1$, $\text{right} = 2i+2$) correct for all~$N$.
+    Store the actual leaf count in \texttt{actual\_n} and the padded count
+    in \texttt{padded\_n}; proof paths must use \texttt{padded\_n} for
+    index arithmetic but must not deliver null-padded leaves to the verifier.
+    \textbf{Maximum depth:} enforce $\lceil\log_2 \mathtt{padded\_n}\rceil
+    \leq 40$ (supporting up to $2^{40} \approx 1$\,Trillion chunks);
+    return \texttt{Err(MerkleError::TreeTooDeep)} for larger inputs to
+    prevent out-of-memory attacks (threat~T7 in \S\ref{sec:threat}).
+    Apply domain-separation prefixes exactly as specified in
     \S\ref{sec:merkle-storage}: prepend \texttt{0x00} before hashing leaf
     inputs, \texttt{0x01} before hashing pairs of internal nodes, and
     \texttt{0x02} for unallocated sparse-chunk slots.
   \item Add a helper \texttt{hash\_chunk(data: \&[u8], alg: HashAlg)
     -> [u8;32]} that computes the leaf hash (with the \texttt{0x00} prefix)
-    over raw chunk bytes.
+    over raw chunk bytes. \textbf{BLAKE3 API note:} use
+    \texttt{Hasher::new().update(\&[0x00]).update(data)\\
+    .finalize()} (the flat hash API); do \emph{not} use BLAKE3's internal
+    tree mode (\texttt{new\_derive\_key} or implicit 1\,KB chunking), which
+    does not expose intermediate nodes and cannot produce per-chunk proofs.
+    BLAKE3 tree mode is benchmarked for throughput in RQ4 only.
   \item Write unit tests covering at minimum:
     \begin{itemize}[nosep]
       \item a single-leaf tree (the root must equal the leaf hash),
@@ -2238,12 +2287,62 @@ array when $N > 256$ chunks.
     expected paths; no regressions.
 \end{enumerate}
 
-%% ── P1.4 ──────────────────────────────────────────────────────────────────
-\paragraph{P1.4\enspace Verification API (Weeks~6--9).}
-Expose five public functions that cover the full range of verification
-granularities described in \S\ref{sec:merkle}. Add these signatures to
-\texttt{clawhdf5-format/src/merkle.rs}:
+%% ── P1.3b ─────────────────────────────────────────────────────────────────
+\paragraph{P1.3b\enspace Parallel leaf-hashing and Map-Reduce aggregation
+(Weeks~5--7).}
+\textit{Dependency:} requires P1.2 (tree struct) and P1.3 (storage layout).
+The write-amplification analysis (\S\ref{sec:merkle-storage}) and R11
+(distributed parallel construction) both require that leaf hashing is
+embarrassingly parallel. Implement the Map-Reduce aggregator described
+in~\S\ref{sec:merkle-storage}.
 
+\begin{enumerate}[nosep]
+  \item Add Cargo dependency \texttt{rayon} to \texttt{clawhdf5-format}.
+  \item Implement \texttt{MerkleTree::build\_parallel(chunks: \&[\&[u8]],
+    alg: HashAlg) -> Self}:
+\begin{lstlisting}
+// Map phase: hash all leaves in parallel
+let leaf_hashes: Vec<[u8; 32]> = chunks
+    .par_iter()
+    .map(|c| hash_chunk(c, alg))
+    .collect();
+// Reduce phase: single-threaded tree aggregation
+MerkleTree::build(&leaf_hashes, alg)
+\end{lstlisting}
+    The reduce phase is sequential because each internal node depends on
+    its two children; the contention is at the upper tree levels, not the
+    leaves.
+  \item For the MPI-IO scenario (C~HDF5 Phase~3), document the equivalent
+    distributed protocol: each MPI rank computes leaf hashes for its own
+    chunk subset; ranks perform an \texttt{MPI\_Reduce} tree over the
+    leaf-hash arrays using $\lceil\log_2 P\rceil$ rounds; the root rank
+    aggregates the final tree. No global lock is needed because each rank
+    owns a disjoint leaf range.
+  \item Write a correctness test: verify that
+    \texttt{build\_parallel} and \texttt{build} produce identical roots
+    for a 1,024-chunk synthetic dataset on at least 4 rayon threads.
+  \item Benchmark \texttt{build\_parallel} vs.\ \texttt{build} at
+    $N \in \{10^4, 10^5, 10^6\}$ on the workstation. Save to
+    \texttt{benches/results/parallel-build-\$(hostname).csv}.
+  \item \emph{Done when:} Correctness test passes; benchmark is committed.
+\end{enumerate}
+
+%% ── P1.4 ──────────────────────────────────────────────────────────────────
+\paragraph{P1.4\enspace Verification API (Weeks~7--10).}
+Expose the \texttt{MerkleError} type and five public verification functions
+in \texttt{clawhdf5-format/src/merkle.rs}. Define the error enum first:
+\begin{lstlisting}
+pub enum MerkleError {
+    HashMismatch { chunk_idx: usize },  // leaf hash != recomputed value
+    CompanionTampered,                  // companion-integrity hash mismatch
+    SignatureInvalid,                   // hybrid sig verification failed
+    MissingChunkGridMetadata,           // _merkle_root attribute absent
+    HyperslabOutOfBounds { idx: usize },// chunk index exceeds dataset
+    TreeTooDeep { depth: usize },       // depth > 40, reject to prevent OOM
+    NoncePending,                       // WAL has uncommitted entry for chunk
+}
+\end{lstlisting}
+Then expose the five public verification functions:
 \begin{lstlisting}
 pub fn verify_root(d: &Dataset) -> Result<bool, MerkleError>;
 pub fn verify_chunk(d: &Dataset, idx: usize) -> Result<bool, MerkleError>;
@@ -2298,20 +2397,31 @@ pub struct ChunkGridParams {
 }
 
 pub struct SubsetProof {
-    pub chunk_indices: Vec<usize>,
-    pub leaf_hashes:   Vec<[u8; 32]>,
-    pub sibling_paths: Vec<Vec<[u8; 32]>>,  // one path per chunk
-    pub grid_params:   ChunkGridParams,
-    pub coverage_cert: [u8; 32],  // H(sorted_indices || grid_hash)
+    pub chunk_indices:      Vec<usize>,
+    pub leaf_hashes:        Vec<[u8; 32]>,
+    // Deduplicated proof nodes keyed by 1D level-order tree index.
+    // Using BTreeMap (not Vec<Vec<...>>) because after deduplication
+    // adjacent proof paths share internal nodes; a flat nested Vec cannot
+    // express which node sits at which tree position, breaking path
+    // reconstruction at the verifier.  Key = level-order index in the
+    // padded binary tree (root = 0, left child of i = 2i+1, right = 2i+2).
+    pub proof_nodes:        std::collections::BTreeMap<u64, [u8; 32]>,
+    pub grid_params:        ChunkGridParams,
+    pub coverage_cert:      [u8; 32],  // H(sorted_indices || grid_hash)
 }
 \end{lstlisting}
   \item Implement \texttt{extract\_subset(dataset: \&Dataset,}
     \texttt{hyperslab: \&Hyperslab)} returning
     \texttt{Result<SubsetProof, MerkleError>}. Translate
-    the hyperslab into a sorted list of chunk indices, fetch the Merkle
-    sibling paths for each, deduplicate internal nodes shared by adjacent
-    proof paths (to keep $|\pi|$ compact), and build the coverage certificate
-    by hashing the sorted index list together with the grid-parameter hash.
+    the hyperslab into a sorted list of chunk indices; compute each leaf's
+    proof path as a set of level-order tree indices; take the union of all
+    path index sets and populate \texttt{proof\_nodes} with one entry per
+    unique index---this is the deduplication step that keeps $|\pi|$
+    compact for contiguous hyperslabs. Build the coverage certificate by
+    hashing the sorted index list together with the grid-parameter hash.
+    The verifier reconstructs each path by looking up the required nodes
+    from \texttt{proof\_nodes} using level-order index arithmetic, so every
+    node that appears in more than one proof path is transmitted only once.
   \item Implement \texttt{verify\_subset(root: [u8;32], chunks: \&[ChunkData],
     proof: \&SubsetProof) -> Result<bool, MerkleError>}. On the recipient
     side: re-hash each delivered chunk, walk its sibling path to confirm it
@@ -2419,6 +2529,22 @@ version-counter nonce derivation that makes in-place chunk updates safe.
 Read \S\ref{sec:filter-order} and \S\ref{sec:nonce} before starting.
 
 \begin{enumerate}[nosep]
+  \item \textbf{Key management scope for P2.2.}
+    ClawHDF5 does not yet have key management infrastructure; Task~2 of
+    S2-D2 will provide the production KeyStore. For this prototype phase,
+    implement a \texttt{MockKeyStore} that derives a static 32-byte DEK
+    from the environment variable \texttt{CLAW\_DUMMY\_DEK} (hex-encoded):
+\begin{lstlisting}
+fn mock_dek() -> [u8; 32] {
+    let hex = std::env::var("CLAW_DUMMY_DEK")
+        .expect("set CLAW_DUMMY_DEK for prototype");
+    hex::decode(&hex).unwrap().try_into().unwrap()
+}
+\end{lstlisting}
+    Do \emph{not} attempt to build HKDF/KEK wrapping or multi-party key
+    distribution in P2.2; that is deferred to Phase~3. All tests must set
+    \texttt{CLAW\_DUMMY\_DEK} in the test environment (add it to
+    \texttt{.cargo/config.toml} under \texttt{[env]}).
   \item Add a \texttt{chacha20\_filter} module to \texttt{clawhdf5-filters}
     with Cargo dependency \texttt{chacha20poly1305}.
   \item Implement version-counter nonce derivation. The nonce for encrypting
@@ -2427,8 +2553,13 @@ Read \S\ref{sec:filter-order} and \S\ref{sec:nonce} before starting.
     \mathit{chunk\_idx} \,\|\, v_\mathrm{chunk})$.
     The per-chunk write counter $v_\mathrm{chunk}$ is stored as a
     \texttt{u32} in the companion dataset alongside each leaf hash.
-    \textbf{Increment and persist $v_\mathrm{chunk}$ before writing the
-    encrypted chunk}; a nonce must never be reused under the same DEK.
+    \textbf{Use the WAL protocol from \S\ref{sec:nonce}}: journal
+    $(\mathit{chunk\_idx}, v_\text{new})$ to a crash-durable log
+    \emph{before} deriving the nonce; write the chunk using $v_\text{new}$;
+    then update the companion dataset and mark the journal record committed.
+    Never increment $v_\mathrm{chunk}$ directly in the companion dataset
+    before writing the chunk, and never reuse the old $v_\mathrm{chunk}$
+    after a crash. A nonce must never be reused under the same DEK.
   \item Enforce the Encrypt-then-MAC pipeline order for filters:
     compress $\to$ shuffle $\to$ encrypt. The Merkle leaf hash must be
     computed over the ciphertext output of the filter chain, not over the
