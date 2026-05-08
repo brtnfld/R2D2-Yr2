@@ -150,7 +150,7 @@ families = [
     ("Post-quantum signatures",     "ML-DSA-65, SLH-DSA, XMSS",
      "Per-chunk: 33 GB of sigs + 3 CPU-hours to sign 10⁷ chunks"),
     ("Hash trees / ADS",            "Merkle binary, SMT, Merkle Mountain Range",
-     "→ THE CANDIDATE  (satisfies all R1–R10 below)"),
+     "→ THE CANDIDATE  (the only family that meets all §4 requirements)"),
     ("Verkle / KZG commitments",    "KZG polynomial, Ethereum Verkle tree",
      "Trusted-setup ceremony required; pairing broken by Shor"),
     ("Cryptographic accumulators",  "RSA accumulator, bilinear accumulator",
@@ -204,28 +204,28 @@ barriers = [
         "Non-cryptographic codes are invertible",
         "CRC, Fletcher, and Adler all admit closed-form corrections.\n"
         "An adversary computes a matching tail that preserves the checksum — no brute force needed.\n"
-        "→  R1–R10 require a cryptographic primitive as the foundation.",
+        "→  The integrity primitive must be cryptographic at its core.",
     ),
     (
         "2",
         "Symmetric auth requires a shared secret — rules out public verifiability",
         "MACs and AEAD are ideal per-chunk tools, but the verifier must hold the key.\n"
         "Third-party auditors, archive mirrors, and collaborators cannot verify.\n"
-        "→  R6 (public verifiability) eliminates any purely symmetric scheme as the root.",
+        "→  Public verifiability eliminates any purely symmetric scheme as the root.",
     ),
     (
         "3",
         "Pairing- and factoring-based schemes fail the 50-year archival horizon",
         "Shor's algorithm breaks ECDSA, Ed25519, RSA, BLS12-381 pairings, and KZG commitments.\n"
         "Scientific archives are signed today and verified in 2040–2070.\n"
-        "→  R9 eliminates Verkle, BLS aggregation, and RSA/bilinear accumulators.",
+        "→  The post-quantum requirement eliminates Verkle, BLS aggregation, and RSA/bilinear accumulators.",
     ),
     (
         "4",
         "Trusted-setup ceremonies are unacceptable for long-lived archives",
         "KZG, Verkle, and RSA accumulators require an MPC ceremony whose\n"
         "parameters must be trusted for the archive's entire lifetime.\n"
-        "→  R8 eliminates every scheme with a structured reference string.",
+        "→  No-trusted-setup eliminates every scheme with a structured reference string.",
     ),
 ]
 
