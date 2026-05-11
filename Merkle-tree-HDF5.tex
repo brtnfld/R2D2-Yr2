@@ -272,6 +272,15 @@ each subsection with the suitability of the approach for multi-terabyte,
 chunked, long-lived scientific data. \S\ref{sec:selection} then derives a
 formal set of requirements and selects a primitive on that basis.
 
+The need for a cryptographic integrity primitive is driven both by operational
+security concerns and by the \emph{FAIR data principles}~\cite{wilkinson2016fair}
+(Findable, Accessible, Interoperable, Reusable). The Reusable pillar requires
+that data are ``associated with detailed provenance,'' and the Accessible
+pillar implies that a recipient of a partial dataset delivery must be able to
+verify authenticity without redownloading the whole. Current HDF5 practice
+satisfies neither demand at terabyte scale; this survey identifies which, if
+any, existing primitives can.
+
 \subsection{Error-detection codes (non-adversarial integrity)}
 
 
@@ -610,7 +619,13 @@ formalizes the requirements and selects from this shortlist.
 \label{sec:requirements}
 
 We translate the problem statement of \S\ref{sec:intro} into twelve concrete
-requirements that any candidate primitive must meet for the HDF5 setting:
+requirements that any candidate primitive must meet for the HDF5 setting.
+Several requirements correspond directly to FAIR data
+principles~\cite{wilkinson2016fair}: R1 and R5b realize the \emph{Accessible}
+pillar (verifiable partial delivery without a full re-download); R6 realizes
+\emph{Reusable} (any downstream collaborator can verify provenance using only
+a public key); and R8--R9 ensure the provenance guarantee is durable across
+the multi-decade archival horizon that FAIR envisions for scientific data.
 
 \begin{description}[nosep]
   \item[R1: Sub-dataset partial verification.]
