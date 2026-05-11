@@ -344,9 +344,11 @@ scratch---a property relevant to streaming and in-transit integrity.
 The fundamental limitation of all symmetric authenticators, however, is that
 verification requires possession of the secret key: a third-party auditor, a
 public archive mirror, or a downstream researcher receiving a derived hyperslab
-cannot verify without it. Symmetric authentication is therefore appropriate as
-a \emph{component} (e.g., AEAD ciphertext authenticity) but cannot serve as
-the public provenance primitive on its own. Encrypt-then-MAC composition is the
+cannot verify without it. This directly conflicts with the FAIR Reusable
+pillar~\cite{wilkinson2016fair}, which requires that provenance be verifiable
+by any party, not only the original data producer. Symmetric authentication
+is therefore appropriate as a \emph{component} (e.g., AEAD ciphertext
+authenticity) but cannot serve as the public provenance primitive on its own. Encrypt-then-MAC composition is the
 canonical secure pattern~\cite{bellare2000encrypt,bellare2000encryptmac}.
 
 \subsection{Classical asymmetric signatures}
@@ -528,7 +530,10 @@ the integrity guarantee evaporates the moment data leaves the filesystem (e.g.,
 copied to S3, archived to tape, transferred between collaborating institutions,
 or downloaded to a researcher's laptop). For a portable, archive-grade
 guarantee, the cryptographic authenticity must travel \emph{with} the file
-format rather than reside exclusively in the storage substrate.
+format rather than reside exclusively in the storage substrate---precisely
+the FAIR Interoperability principle~\cite{wilkinson2016fair}, which requires
+that data and its associated metadata remain usable across platforms and
+institutions without depending on any particular infrastructure.
 
 \subsection{Cloud object-store integrity primitives}
 
@@ -997,9 +1002,11 @@ scientific data use case requires integrity \emph{without} encryption:
 \begin{description}[nosep]
   \item[Most scientific data is unencrypted.]
     NOAA climate records, EQSIM earthquake simulations, astronomical survey
-    data, and genomic reference sequences are public or community-shared. These
-    datasets have no confidentiality requirement, but they critically need
-    tamper detection---a corrupted simulation checkpoint or a silently modified
+    data, and genomic reference sequences are public or community-shared---
+    canonical FAIR datasets~\cite{wilkinson2016fair} that must be Accessible
+    and Reusable by any downstream researcher. These datasets have no
+    confidentiality requirement, but they critically need tamper
+    detection---a corrupted simulation checkpoint or a silently modified
     climate record can invalidate months of downstream analysis. The Merkle
     tree provides chunk-level integrity using only hashing (SHA-256 with SHA-NI
     achieves $\sim$1.5--3\,GB/s per core; aggregate throughput scales linearly
