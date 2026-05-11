@@ -219,7 +219,7 @@ ClawHDF5 is organized as the following Rust crates in a layered architecture:
 \begin{itemize}[nosep]
   \item \texttt{clawhdf5-format}: \texttt{no\_std}-compatible binary format parser/writer
   \item \texttt{clawhdf5-io}: I/O backends (buffered, mmap, async, VOL, sub-filing)
-  \item \texttt{clawhdf5-filters}: Filter pipeline (deflate, shuffle, fletcher32)
+  \item \texttt{clawhdf5-filters}: Filter pipeline (deflate backends)
   \item \texttt{clawhdf5-accel}: SIMD acceleration (NEON, AVX2, AVX-512)
   \item \texttt{clawhdf5-gpu}: GPU compute via wgpu~\cite{wgpu}
   \item \texttt{clawhdf5}: High-level ergonomic API
@@ -231,8 +231,8 @@ creator identity, timestamps, and optional source identifiers as HDF5
 attributes. Integrity verification (\texttt{verify\_dataset()}) rehashes the
 entire dataset and compares against the stored hash. Notably, ClawHDF5 does
 \emph{not} currently include encryption, HMAC, or digital signature support in
-its filter pipeline---the \texttt{clawhdf5-filters} crate provides only
-deflate, shuffle, and fletcher32. Cryptographic operations will therefore be
+its filter pipeline---\texttt{clawhdf5-filters} provides deflate backends
+and \texttt{clawhdf5-format} implements shuffle and fletcher32. Cryptographic operations will therefore be
 implemented as new filters and crate modules as part of this research.
 
 \subsection{S2-D2 Framework Architecture}
