@@ -16,6 +16,7 @@
 \usepackage{listings}
 \usepackage{fancyhdr}
 \usepackage{colortbl}
+\usepackage{float}
 \setlength{\emergencystretch}{4em}
 \newcommand{\mapsec}[3]{%
   \smallskip\noindent
@@ -715,7 +716,7 @@ Table~\ref{tab:integrity-comparison} maps the seven alternative classes plus
 Merkle tree (eight columns total) identified in the survey against these twelve
 requirements.
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \small
 \setlength{\tabcolsep}{3.5pt}
@@ -1386,7 +1387,7 @@ A dataset with $N$ chunks produces a Merkle tree with $\sim 2N$ nodes. Each
 node is a 32-byte hash (SHA-256 or BLAKE3). Table~\ref{tab:overhead} shows
 storage overhead for representative dataset sizes.
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \caption{Merkle tree storage overhead for 32-byte (SHA-256) node hashes.}
 \label{tab:overhead}
@@ -2772,7 +2773,7 @@ Items are in priority order.
 \section{Deliverables and S2-D2 Contributions}
 \label{sec:deliverables}
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \caption{Mapping of deliverables to S2-D2 tasks. The three primary research
 contributions targeted at the resulting publication are starred.}
@@ -3211,7 +3212,7 @@ get the full story.
 \bigskip
 \subsection*{\textcolor{blue!60!black}{Evidence flow: tasks $\rightarrow$ paper sections}}
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \small
 \begin{tabular}{@{}p{1.1cm}p{6.8cm}cccc@{}}
@@ -3292,7 +3293,7 @@ P3.5* & PROV graph integration                         & \checkmark & & & \\
 %% ----------------------------------------------------------------------------
 \subsection*{\textcolor{blue!60!black}{Writing timeline}}
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \small
 \begin{tabular}{@{}p{3.0cm}p{2.2cm}p{7.5cm}@{}}
