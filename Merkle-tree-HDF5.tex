@@ -621,6 +621,108 @@ formalizes the requirements and selects from this shortlist.
 \section{Requirements and Selection}
 \label{sec:selection}
 
+\subsection{Threat Model}
+\label{sec:threat}
+
+Before deriving the requirements, we define the adversary model
+that motivates the design. We consider eight threats spanning three SHINES
+taxonomy categories~\cite{shines} (TCD, FMT, EXT) plus systems-security
+and privacy extensions (T6--T8):
+
+\begin{description}[nosep]
+  \item[T1: Storage-level tampering (TCD).]
+    An adversary with read\slash write access to the storage medium (e.g., a
+    compromised storage node, a malicious administrator, or a man-in-the-middle
+    during file transfer) modifies chunk data, metadata, or both. The adversary
+    may attempt \emph{targeted modification} (altering specific chunks while
+    leaving the rest intact) or \emph{wholesale replacement} (substituting the
+    entire file). The adversary does \emph{not} possess the signing private key.
+  \item[T2: Silent data corruption (FMT).]
+    Hardware-level bit-flips, firmware bugs, or filesystem errors introduce
+    undetected modifications to stored chunks. This is a non-adversarial
+    integrity threat that existing HDF5 v2 metadata checksums partially
+    address for metadata pages, but not for raw data.
+  \item[T3: Provenance forgery (EXT).]
+    An adversary attempts to attribute a dataset to a different creator or
+    institution, or to claim that a modified dataset is the original. This
+    requires non-repudiable authorship via digital signatures.
+  \item[T4: Rollback / stale data attack.]
+    An adversary with storage access replaces the current version of a file
+    (data, Merkle tree, and signed root) with a valid, properly signed
+    \emph{older} version of the same file. The cryptography verifies
+    perfectly, but the researcher operates on stale data (e.g., a simulation
+    checkpoint rolled back to a pre-correction state). This threat requires
+    temporal ordering beyond what a static Merkle root provides.
+  \item[T5: Harvest-now, forge-later (post-quantum).]
+    An adversary archives signed roots and public keys today and, once a
+    cryptographically relevant quantum computer (CRQC) exists, recovers the
+    Ed25519 (or other elliptic-curve) private key via Shor's algorithm and
+    forges signatures over tampered data attributed to the original signer.
+    Because scientific datasets are routinely retained for 30--100~years, this
+    threat is concrete for any archive signed with classical-only signatures.
+  \item[T6: Security stripping and algorithm downgrade.]
+    An adversary deletes the provenance metadata entirely (removing the
+    \texttt{\_merkle\_root} attribute and the \texttt{/\_merkle} companion
+    dataset) to force a fail-open downgrade to unauthenticated access, or
+    alters the unencrypted algorithm identifiers in the root attribute to
+    force the verifier to use a weaker cryptographic primitive (e.g.,
+    downgrading the hash from \texttt{blake3} to \texttt{sha256-truncated-128}, or
+    downgrading the AEAD from \texttt{AES-256-GCM} to \texttt{AES-128-GCM}).
+    Unlike T1--T3, no signature forgery is required; the attack exploits
+    verifier leniency toward missing or downgraded metadata.
+  \item[T7: Verification resource exhaustion (DoS).]
+    An adversary crafts a malformed companion dataset, manipulated
+    chunk-grid metadata, or cyclic proof paths designed to force the
+    verifier into unbounded computation or out-of-memory states during
+    \texttt{verify\_subset}.  For example, a claimed Merkle path of
+    depth $2^{63}$, or a coverage certificate that maps a tiny hyperslab
+    to astronomically many chunks, can exhaust memory on an HPC compute
+    node before any cryptographic check occurs.
+  \item[T8: Structural metadata leakage (privacy).]
+    For encrypted datasets stored with Sparse Merkle Trees, an adversary
+    observes the companion dataset to map the physical allocation grid---the
+    positions of null leaves directly reveal which chunks are unallocated.
+    Even without decrypting a single byte, the shape of the sparse data
+    can leak sensitive structure (e.g., geographic boundaries in radar data,
+    or expressed-gene regions in a genomic sequence).
+\end{description}
+
+\noindent Each proposed mechanism maps to these threats as follows. The Merkle
+tree detects and localizes T1~(targeted modification) and T2 at chunk
+granularity via partial verification. The signed root hash defeats T1~(wholesale
+replacement) and T3, since the adversary cannot produce a valid signature
+without the private key. The Ed25519 signature binds authorship to the root,
+and optional Sigstore publication provides a public, append-only audit trail
+for T3. To defend against T4, the signed root attribute includes a
+\textbf{monotonic dataset version number} that is incremented on every write
+(append or in-place update), plus a high-resolution timestamp. A verifier can
+reject a file whose version number is lower than a previously observed version.
+Note that this defense requires the verifier to have a \emph{prior observation}
+of the dataset; a first-time recipient cannot detect rollback from version
+information alone. An external cryptographic timestamp (TSA, RFC~3161) or
+Sigstore transparency log publication is therefore necessary for verifiers
+who may be receiving the dataset for the first time---this is why the
+TSA stretch goal (\S\ref{sec:signing}) is architecturally significant.
+Sigstore transparency log publication (if enabled) also provides an independent,
+tamper-evident temporal record. Importantly, the companion dataset storing the
+full Merkle tree must itself be protected---we address this via an integrity
+hash of the serialized companion included in the signed root attribute
+(\S\ref{sec:merkle-storage}). To defend against T5, the signed root carries a
+\emph{hybrid} signature combining Ed25519 with a post-quantum scheme
+(ML-DSA-65 or SLH-DSA-128s); see \S\ref{sec:pq-hybrid}.
+To defend against T6, the S2-D2 runtime enforces a \textbf{fail-closed Strict
+Mode} for policy-governed files (\S\ref{sec:merkle-storage}), and the
+cryptographic algorithm identifiers are bound into the signed payload~$R$
+(\S\ref{sec:pq-hybrid}), making any downgrade attempt detectable as a
+signature failure. To mitigate T7, the verification protocol strictly validates
+object-header chunk-grid bounds before allocating memory for hyperslab proofs
+and enforces maximum tree depths (\S\ref{sec:security-analysis}), preventing
+adversarially crafted proofs from exhausting verifier resources. To address T8,
+confidential sparse datasets may mask unallocated subtrees by incorporating a
+secret salt derived from the Data Encryption Key into the SMT null constant
+(\S\ref{sec:merkle-storage}); alternatively, full allocation can be enforced
+to eliminate structural leakage entirely.
+
 \subsection{Requirements}
 \label{sec:requirements}
 
@@ -887,108 +989,6 @@ provenance graph, \S\ref{sec:limitations}).
 %% ============================================================================
 \section{Merkle-Tree Provenance}
 \label{sec:merkle}
-
-\subsection{Threat Model}
-\label{sec:threat}
-
-Before describing the Merkle tree construction, we define the adversary model
-that motivates the design. We consider eight threats spanning three SHINES
-taxonomy categories~\cite{shines} (TCD, FMT, EXT) plus systems-security
-and privacy extensions (T6--T8):
-
-\begin{description}[nosep]
-  \item[T1: Storage-level tampering (TCD).]
-    An adversary with read\slash write access to the storage medium (e.g., a
-    compromised storage node, a malicious administrator, or a man-in-the-middle
-    during file transfer) modifies chunk data, metadata, or both. The adversary
-    may attempt \emph{targeted modification} (altering specific chunks while
-    leaving the rest intact) or \emph{wholesale replacement} (substituting the
-    entire file). The adversary does \emph{not} possess the signing private key.
-  \item[T2: Silent data corruption (FMT).]
-    Hardware-level bit-flips, firmware bugs, or filesystem errors introduce
-    undetected modifications to stored chunks. This is a non-adversarial
-    integrity threat that existing HDF5 v2 metadata checksums partially
-    address for metadata pages, but not for raw data.
-  \item[T3: Provenance forgery (EXT).]
-    An adversary attempts to attribute a dataset to a different creator or
-    institution, or to claim that a modified dataset is the original. This
-    requires non-repudiable authorship via digital signatures.
-  \item[T4: Rollback / stale data attack.]
-    An adversary with storage access replaces the current version of a file
-    (data, Merkle tree, and signed root) with a valid, properly signed
-    \emph{older} version of the same file. The cryptography verifies
-    perfectly, but the researcher operates on stale data (e.g., a simulation
-    checkpoint rolled back to a pre-correction state). This threat requires
-    temporal ordering beyond what a static Merkle root provides.
-  \item[T5: Harvest-now, forge-later (post-quantum).]
-    An adversary archives signed roots and public keys today and, once a
-    cryptographically relevant quantum computer (CRQC) exists, recovers the
-    Ed25519 (or other elliptic-curve) private key via Shor's algorithm and
-    forges signatures over tampered data attributed to the original signer.
-    Because scientific datasets are routinely retained for 30--100~years, this
-    threat is concrete for any archive signed with classical-only signatures.
-  \item[T6: Security stripping and algorithm downgrade.]
-    An adversary deletes the provenance metadata entirely (removing the
-    \texttt{\_merkle\_root} attribute and the \texttt{/\_merkle} companion
-    dataset) to force a fail-open downgrade to unauthenticated access, or
-    alters the unencrypted algorithm identifiers in the root attribute to
-    force the verifier to use a weaker cryptographic primitive (e.g.,
-    downgrading the hash from \texttt{blake3} to \texttt{sha256-truncated-128}, or
-    downgrading the AEAD from \texttt{AES-256-GCM} to \texttt{AES-128-GCM}).
-    Unlike T1--T3, no signature forgery is required; the attack exploits
-    verifier leniency toward missing or downgraded metadata.
-  \item[T7: Verification resource exhaustion (DoS).]
-    An adversary crafts a malformed companion dataset, manipulated
-    chunk-grid metadata, or cyclic proof paths designed to force the
-    verifier into unbounded computation or out-of-memory states during
-    \texttt{verify\_subset}.  For example, a claimed Merkle path of
-    depth $2^{63}$, or a coverage certificate that maps a tiny hyperslab
-    to astronomically many chunks, can exhaust memory on an HPC compute
-    node before any cryptographic check occurs.
-  \item[T8: Structural metadata leakage (privacy).]
-    For encrypted datasets stored with Sparse Merkle Trees, an adversary
-    observes the companion dataset to map the physical allocation grid---the
-    positions of null leaves directly reveal which chunks are unallocated.
-    Even without decrypting a single byte, the shape of the sparse data
-    can leak sensitive structure (e.g., geographic boundaries in radar data,
-    or expressed-gene regions in a genomic sequence).
-\end{description}
-
-\noindent Each proposed mechanism maps to these threats as follows. The Merkle
-tree detects and localizes T1~(targeted modification) and T2 at chunk
-granularity via partial verification. The signed root hash defeats T1~(wholesale
-replacement) and T3, since the adversary cannot produce a valid signature
-without the private key. The Ed25519 signature binds authorship to the root,
-and optional Sigstore publication provides a public, append-only audit trail
-for T3. To defend against T4, the signed root attribute includes a
-\textbf{monotonic dataset version number} that is incremented on every write
-(append or in-place update), plus a high-resolution timestamp. A verifier can
-reject a file whose version number is lower than a previously observed version.
-Note that this defense requires the verifier to have a \emph{prior observation}
-of the dataset; a first-time recipient cannot detect rollback from version
-information alone. An external cryptographic timestamp (TSA, RFC~3161) or
-Sigstore transparency log publication is therefore necessary for verifiers
-who may be receiving the dataset for the first time---this is why the
-TSA stretch goal (\S\ref{sec:signing}) is architecturally significant.
-Sigstore transparency log publication (if enabled) also provides an independent,
-tamper-evident temporal record. Importantly, the companion dataset storing the
-full Merkle tree must itself be protected---we address this via an integrity
-hash of the serialized companion included in the signed root attribute
-(\S\ref{sec:merkle-storage}). To defend against T5, the signed root carries a
-\emph{hybrid} signature combining Ed25519 with a post-quantum scheme
-(ML-DSA-65 or SLH-DSA-128s); see \S\ref{sec:pq-hybrid}.
-To defend against T6, the S2-D2 runtime enforces a \textbf{fail-closed Strict
-Mode} for policy-governed files (\S\ref{sec:merkle-storage}), and the
-cryptographic algorithm identifiers are bound into the signed payload~$R$
-(\S\ref{sec:pq-hybrid}), making any downgrade attempt detectable as a
-signature failure. To mitigate T7, the verification protocol strictly validates
-object-header chunk-grid bounds before allocating memory for hyperslab proofs
-and enforces maximum tree depths (\S\ref{sec:security-analysis}), preventing
-adversarially crafted proofs from exhausting verifier resources. To address T8,
-confidential sparse datasets may mask unallocated subtrees by incorporating a
-secret salt derived from the Data Encryption Key into the SMT null constant
-(\S\ref{sec:merkle-storage}); alternatively, full allocation can be enforced
-to eliminate structural leakage entirely.
 
 \subsection{Why Integrity Verification Independent of Encryption?}
 \label{sec:why-integrity}
