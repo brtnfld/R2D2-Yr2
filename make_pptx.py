@@ -117,12 +117,13 @@ footer(s)
 steps = [
     ("§3", "Survey of integrity primitives",    "14 families — capability and killer flaw for HDF5"),
     ("§3", "What the survey reveals",           "Four structural barriers that drive the requirements"),
-    ("§4", "Ten requirements  (R1–R10)",        "What any primitive must satisfy for HDF5"),
-    ("§4", "Comparison table",                  "All seven alternatives scored at a glance"),
-    ("§4", "Selection: Merkle + PQ signature",  "The only R1–R10-complete, quantum-safe option"),
+    ("§4", "Threat model (T1–T8)",              "Eight threats that motivate the requirements"),
+    ("§4", "Twelve requirements (R1–R12)",      "What any primitive must satisfy for HDF5"),
+    ("§4", "Comparison table",                  "All twelve requirements scored across seven alternatives"),
+    ("§4", "Selection: Merkle + PQ signature",  "The only R1–R12-complete, quantum-safe option"),
 ]
 for i, (num, title, sub) in enumerate(steps):
-    y = 1.45 + i * 1.08
+    y = 1.45 + i * 0.92
     add_rect(s, 0.4, y, 0.65, 0.55, fill=GOLD)
     add_text(s, num, 0.40, y+0.06, 0.65, 0.48,
              size=16, bold=True, color=DARK_BLUE, align=PP_ALIGN.CENTER)
@@ -240,38 +241,96 @@ for i, (num, title, body) in enumerate(barriers):
     add_text(s, body,  1.20, y+0.44, 11.6, 0.74,
              size=11, color=LIGHT_BLUE)
 
-# ── SLIDE 5: Requirements overview ───────────────────────────────────────────
+# ── SLIDE 5: Threat model ────────────────────────────────────────────────────
 s = prs.slides.add_slide(BLANK)
 slide_bg(s)
-header_bar(s, "§4  Ten Requirements for HDF5 Integrity",
-           "Any candidate primitive must satisfy all ten — simultaneously")
+header_bar(s, "§4  Threat Model: Eight Threats That Drive the Requirements",
+           "Adversary model defined before requirements — threats first, then what the primitive must resist")
+footer(s)
+
+threats = [
+    ("T1", "Storage-level tampering",   "TCD",
+     "Adversary with storage access modifies chunk data or metadata — targeted or wholesale replacement"),
+    ("T2", "Silent data corruption",    "FMT",
+     "Hardware bit-flips, firmware bugs, or filesystem errors corrupt chunks undetected"),
+    ("T3", "Provenance forgery",        "EXT",
+     "Adversary attributes a modified dataset to a different creator — requires non-repudiable signatures"),
+    ("T4", "Rollback / stale data",     "sys",
+     "Valid, properly signed older version replaces current file — cryptography passes but data is stale"),
+    ("T5", "Harvest-now, forge-later",  "PQ",
+     "Archives signed today are broken by CRQC in 2040–2070 via Shor's algorithm on Ed25519 / ECDSA"),
+    ("T6", "Algorithm downgrade",       "sys",
+     "Adversary strips provenance metadata or degrades hash/AEAD identifiers to force fail-open or weaker crypto"),
+    ("T7", "Verification DoS",          "sys",
+     "Malformed companion dataset with crafted tree depth or coverage certificate exhausts verifier memory"),
+    ("T8", "Structural leakage",        "priv",
+     "SMT null-leaf positions reveal unallocated chunk grid — geographic or genomic structure exposed without decryption"),
+]
+
+left  = threats[:4]
+right = threats[4:]
+ROW_H_T = 1.28
+
+CAT_COLORS = {
+    "TCD":  RGBColor(0xB0, 0x30, 0x20),
+    "FMT":  RGBColor(0xB0, 0x30, 0x20),
+    "EXT":  RGBColor(0xB0, 0x30, 0x20),
+    "sys":  RGBColor(0x18, 0x55, 0x8A),
+    "PQ":   RGBColor(0x7A, 0x40, 0x00),
+    "priv": RGBColor(0x2A, 0x6A, 0x2A),
+}
+
+for col_idx, group in enumerate([left, right]):
+    lx = 0.25 if col_idx == 0 else 6.72
+    for i, (tag, name, cat, desc) in enumerate(group):
+        y = 1.40 + i * ROW_H_T
+        cat_color = CAT_COLORS.get(cat, MID_BLUE)
+        add_rect(s, lx, y, 6.30, ROW_H_T - 0.08, fill=MID_BLUE)
+        add_rect(s, lx, y, 0.60, ROW_H_T - 0.08, fill=GOLD)
+        add_text(s, tag, lx, y + 0.34, 0.60, 0.50,
+                 size=13, bold=True, color=DARK_BLUE, align=PP_ALIGN.CENTER)
+        add_rect(s, lx + 4.70, y + 0.08, 1.48, 0.36, fill=cat_color)
+        add_text(s, cat, lx + 4.72, y + 0.09, 1.44, 0.32,
+                 size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        add_text(s, name, lx + 0.68, y + 0.06, 4.1, 0.36,
+                 size=13, bold=True, color=WHITE)
+        add_text(s, desc, lx + 0.68, y + 0.52, 5.50, 0.60,
+                 size=10, color=LIGHT_BLUE)
+
+# ── SLIDE 6: Requirements overview ───────────────────────────────────────────
+s = prs.slides.add_slide(BLANK)
+slide_bg(s)
+header_bar(s, "§4  Twelve Requirements for HDF5 Integrity",
+           "Any candidate primitive must satisfy all twelve — simultaneously")
 footer(s)
 
 reqs = [
-    ("R1",  "Partial verification",   "Verify k chunks at O(k log N), no full rehash"),
-    ("R2",  "Incremental extend",     "Append chunks in O(log N), no re-sign"),
-    ("R3",  "In-place update",        "Overwrite chunk k in O(log N) tree-update work"),
-    ("R4",  "Tamper localization",    "Identify which chunks changed, not just 'something did'"),
-    ("R5a", "Chunk authenticity",     "Each chunk tied to signer's commitment"),
-    ("R5b", "Coverage proof",         "Prove delivered set is exactly the requested hyperslab"),
-    ("R6",  "Public verifiability",   "No secret key required — any auditor can verify"),
-    ("R7",  "Compact proof",          "Proof size sublinear in N  (target: O(k log N))"),
-    ("R8",  "No trusted setup",       "No MPC ceremony, no trapdoored parameters"),
-    ("R9",  "Post-quantum path",      "Survives Shor: swap hash/sig, no re-sign of archives"),
-    ("R10", "HPC-feasible build",     "Commitment at memory-bandwidth speed on commodity HW"),
+    ("R1",  "Partial verification",        "Verify k chunks at O(k log N), no full rehash"),
+    ("R2",  "Incremental extend",          "Append chunks in O(log N), no re-sign"),
+    ("R3",  "In-place update",             "Overwrite chunk k in O(log N) tree-update work"),
+    ("R4",  "Tamper localization",         "Identify which chunks changed, not just 'something did'"),
+    ("R5a", "Chunk authenticity",          "Each chunk tied to signer's commitment"),
+    ("R5b", "Coverage proof",              "Prove delivered set is exactly the requested hyperslab"),
+    ("R6",  "Public verifiability",        "No secret key required — any auditor can verify"),
+    ("R7",  "Compact proof",               "Proof size sublinear in N  (target: O(k log N))"),
+    ("R8",  "No trusted setup",            "No MPC ceremony, no trapdoored parameters"),
+    ("R9",  "Post-quantum path",           "Survives Shor: swap hash/sig, no re-sign of archives"),
+    ("R10", "HPC-feasible build",          "Commitment at memory-bandwidth speed on commodity HW"),
+    ("R11", "Distributed parallel build",  "Leaves computed independently per node; O(log P) MPI reduction"),
+    ("R12", "Structure confidentiality",   "Sparse null-leaf positions hidden from observers who cannot decrypt"),
 ]
-cols = [(0.35, reqs[:5]), (6.85, reqs[5:10])]
+cols = [(0.35, reqs[:6]), (6.85, reqs[6:])]
 for cx, group in cols:
     for i, (tag, name, detail) in enumerate(group):
-        y = 1.42 + i * 1.07
-        add_rect(s, cx, y, 0.72, 0.62, fill=GOLD)
-        add_text(s, tag, cx, y+0.08, 0.72, 0.50,
-                 size=14, bold=True, color=DARK_BLUE, align=PP_ALIGN.CENTER)
-        add_rect(s, cx+0.76, y, 5.7, 0.62, fill=MID_BLUE)
-        add_text(s, name,   cx+0.86, y+0.02, 5.5, 0.28, size=13, bold=True, color=WHITE)
-        add_text(s, detail, cx+0.86, y+0.30, 5.5, 0.28, size=11, color=LIGHT_BLUE)
+        y = 1.42 + i * 0.90
+        add_rect(s, cx, y, 0.72, 0.56, fill=GOLD)
+        add_text(s, tag, cx, y+0.06, 0.72, 0.46,
+                 size=13, bold=True, color=DARK_BLUE, align=PP_ALIGN.CENTER)
+        add_rect(s, cx+0.76, y, 5.7, 0.56, fill=MID_BLUE)
+        add_text(s, name,   cx+0.86, y+0.02, 5.5, 0.26, size=12, bold=True, color=WHITE)
+        add_text(s, detail, cx+0.86, y+0.28, 5.5, 0.24, size=10, color=LIGHT_BLUE)
 
-# ── SLIDE 6: Comparison table ─────────────────────────────────────────────────
+# ── SLIDE 7: Comparison table ─────────────────────────────────────────────────
 s = prs.slides.add_slide(BLANK)
 slide_bg(s, LIGHT_GRAY)
 header_bar(s, "§4  Candidate Primitives vs. Requirements")
@@ -284,7 +343,7 @@ col_x   = [0.18]
 for w in col_w[:-1]:
     col_x.append(col_x[-1] + w)
 
-ROW_H = 0.385
+ROW_H = 0.350
 header_y = 1.32
 
 for j, (hdr, x, w) in enumerate(zip(headers, col_x, col_w)):
@@ -310,6 +369,8 @@ rows = [
     ("R8",  CHK, CHK, CHK, CRS, CRS, "var", "vnd", CHK),
     ("R9",  CHK, CHK, CRS, CRS, CRS, "STARK","vnd", CHK),
     ("R10", CHK, CHK, CRS, CRS, "1s", CRS,  CHK,   CHK),
+    ("R11", CHK, CHK, CHK, CRS, CRS, CRS,  "vnd", CHK),
+    ("R12", CRS, CRS, CRS, CRS, CRS, CRS,  CRS,   "opt"),
 ]
 
 for i, row in enumerate(rows):
@@ -326,14 +387,14 @@ for i, row in enumerate(rows):
                  size=11, bold=(cell in (CHK, CRS)),
                  color=txt_color, align=PP_ALIGN.CENTER)
 
-add_text(s, "samp=sampling only  |  prt=partial  |  vnd=vendor-locked  |  var=varies",
+add_text(s, "samp=sampling only  |  prt=partial  |  vnd=vendor-locked  |  var=varies  |  opt=opt-in (SMT with PRF-masked null hashes)",
          0.18, 7.00, 12.9, 0.28, size=8.5, color=MID_GRAY, align=PP_ALIGN.CENTER)
 
-# ── SLIDE 7: Selection conclusion ────────────────────────────────────────────
+# ── SLIDE 8: Selection conclusion ────────────────────────────────────────────
 s = prs.slides.add_slide(BLANK)
 slide_bg(s)
 header_bar(s, "§4  Selection: Hash Tree with a Signed Root",
-           "The only primitive satisfying R1–R10 without trusted setup or quantum liability")
+           "The only primitive satisfying R1–R12 without trusted setup or quantum liability")
 footer(s)
 
 add_rect(s, 0.35, 1.38, 12.63, 0.72, fill=GREEN_CHK)
@@ -361,7 +422,7 @@ for i, (title, detail) in enumerate(points):
     add_text(s, title,  0.52, y+0.02, 12.0, 0.30, size=14, bold=True, color=WHITE)
     add_text(s, detail, 0.52, y+0.31, 12.0, 0.30, size=12, color=LIGHT_BLUE)
 
-# ── SLIDE 8: Why not the alternatives ────────────────────────────────────────
+# ── SLIDE 9: Why not the alternatives ────────────────────────────────────────
 s = prs.slides.add_slide(BLANK)
 slide_bg(s)
 header_bar(s, "§4  Why Not the Alternatives?",
@@ -406,7 +467,7 @@ for i, (name, fail, reason) in enumerate(alts):
     add_text(s, name,   x+0.15, y+0.08,  4.3, 0.55, size=14, bold=True, color=GOLD)
     add_text(s, reason, x+0.15, y+0.62, 5.95, 0.98, size=11, color=LIGHT_BLUE)
 
-# ── SLIDE 9: Honest framing / conclusion ─────────────────────────────────────
+# ── SLIDE 10: Honest framing / conclusion ────────────────────────────────────
 s = prs.slides.add_slide(BLANK)
 slide_bg(s)
 header_bar(s, "§4  Honest Framing of the Conclusion")
@@ -422,7 +483,7 @@ add_rect(s, 0.35, 2.65, 12.63, 1.28, fill=MID_BLUE)
 add_text(s, "What distinguishes Merkle:", 0.55, 2.70, 12.0, 0.38,
          size=16, bold=True, color=WHITE)
 add_text(s,
-         "It is the only primitive achieving R1–R10 simultaneously,\n"
+         "It is the only primitive achieving R1–R12 simultaneously,\n"
          "without a trusted-setup ceremony and without a pairing- or\n"
          "factoring-based primitive that Shor's algorithm breaks.",
          0.55, 3.06, 12.0, 0.80, size=15, color=WHITE)
